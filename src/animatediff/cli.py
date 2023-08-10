@@ -321,6 +321,14 @@ def generate(
                 seed = torch.seed()
             logger.info(f"Generation seed: {seed}")
 
+            prompt_map = {}
+            if not model_config.prompt_map:
+                prompt_map = {0:prompt}
+            else:
+                for k in model_config.prompt_map.keys():
+                    if int(k) < length:
+                        prompt_map[int(k)]=model_config.prompt_map[k]
+
             output = run_inference(
                 pipeline=pipeline,
                 prompt=prompt,
@@ -337,6 +345,7 @@ def generate(
                 context_overlap=overlap,
                 context_stride=stride,
                 clip_skip=model_config.clip_skip,
+                prompt_map=prompt_map,
             )
             outputs.append(output)
             torch.cuda.empty_cache()

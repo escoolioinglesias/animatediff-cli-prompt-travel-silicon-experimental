@@ -2,7 +2,7 @@ import logging
 import re
 from os import PathLike
 from pathlib import Path
-from typing import Union
+from typing import Dict, Union
 
 import torch
 from diffusers import AutoencoderKL, StableDiffusionPipeline
@@ -142,6 +142,7 @@ def run_inference(
     context_schedule: str = "uniform",
     clip_skip: int = 1,
     return_dict: bool = False,
+    prompt_map: Dict[int, str] = None,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
@@ -164,6 +165,7 @@ def run_inference(
         context_overlap=context_overlap,
         context_schedule=context_schedule,
         clip_skip=clip_skip,
+        prompt_map=prompt_map,
     )
     logger.info("Generation complete, saving...")
 

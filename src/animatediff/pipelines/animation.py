@@ -491,6 +491,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         context_overlap: int = 4,
         context_schedule: str = "uniform",
         clip_skip: int = 1,
+        prompt_map: Dict[int, str] = None,
         **kwargs,
     ):
         # Default height and width to unet
@@ -524,17 +525,62 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         text_encoder_lora_scale = (
             cross_attention_kwargs.get("scale", None) if cross_attention_kwargs is not None else None
         )
-        prompt_embeds = self._encode_prompt(
-            prompt,
-            device,
-            num_videos_per_prompt,
-            do_classifier_free_guidance,
-            negative_prompt,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            lora_scale=text_encoder_lora_scale,
-            clip_skip=clip_skip,
-        )
+
+        prompt_embeds_map = {}
+        prompt_map = dict(sorted(prompt_map.items()))
+
+        for key_frame in prompt_map:
+            prompt_embeds = self._encode_prompt(
+                prompt_map[key_frame],
+                device,
+                num_videos_per_prompt,
+                do_classifier_free_guidance,
+                negative_prompt,
+                prompt_embeds=None,
+                negative_prompt_embeds=negative_prompt_embeds,
+                lora_scale=text_encoder_lora_scale,
+                clip_skip=clip_skip,
+            )
+            prompt_embeds_map[key_frame] = prompt_embeds
+
+        key_first =list(prompt_map.keys())[0]
+        key_last =list(prompt_map.keys())[-1]
+
+        def get_current_prompt_embeds(
+                context: List[int] = None,
+                video_length : int = 0
+                ):
+            center_frame = context[len(context)//2]
+
+            key_prev = key_last
+            key_next = key_first
+
+            for p in prompt_map.keys():
+                if p > center_frame:
+                    key_next = p
+                    break
+                key_prev = p
+
+            dist_prev = center_frame - key_prev
+            if dist_prev < 0:
+                dist_prev += video_length
+            dist_next = key_next - center_frame
+            if dist_next < 0:
+                dist_next += video_length
+
+#            logger.info("center_frame="+ str(center_frame))
+#            logger.info("key_prev="+ str(key_prev))
+#            logger.info("key_next="+ str(key_next))
+
+            if key_prev == key_next or dist_prev + dist_next == 0:
+                return prompt_embeds_map[key_prev]
+
+            rate = dist_prev / (dist_prev + dist_next)
+
+#            logger.info("rate="+ str(rate))
+
+            return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
+
 
         # 4. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=latents_device)
@@ -593,11 +639,13 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     )
                     latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
+                    cur_prompt = get_current_prompt_embeds(context, latents.shape[2])
+
                     # predict the noise residual
                     pred = self.unet(
                         latent_model_input.to(self.unet.device, self.unet.dtype),
                         t,
-                        encoder_hidden_states=prompt_embeds,
+                        encoder_hidden_states=cur_prompt,
                         cross_attention_kwargs=cross_attention_kwargs,
                         return_dict=False,
                     )[0]

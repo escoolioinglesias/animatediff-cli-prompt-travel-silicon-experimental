@@ -109,6 +109,7 @@ class ModelConfig(BaseSettings):
     clip_skip: int = 1  # skip the last N-1 layers of the CLIP text encoder
     prompt: list[str] = Field([])  # Prompt(s) to use
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
+    prompt_map: Dict[str,str]= Field({})
 
     class Config(JsonConfig):
         json_config_path: Path
