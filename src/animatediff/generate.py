@@ -15,7 +15,8 @@ from animatediff.pipelines import AnimationPipeline, load_text_embeddings
 from animatediff.schedulers import get_scheduler
 from animatediff.settings import InferenceConfig, ModelConfig
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
-from animatediff.utils.model import ensure_motion_modules, get_checkpoint_weights
+from animatediff.utils.model import (ensure_motion_modules,
+                                     get_checkpoint_weights)
 from animatediff.utils.util import save_video
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,21 @@ data_dir = get_dir("data")
 default_base_path = data_dir.joinpath("models/huggingface/stable-diffusion-v1-5")
 
 re_clean_prompt = re.compile(r"[^\w\-, ]")
+
+
+def load_safetensors_lora(vae, text_encoder, unet, lora_path, alpha=0.75):
+    from safetensors.torch import load_file
+
+    from animatediff.utils.lora_diffusers import (LoRANetwork,
+                                                  create_network_from_weights)
+
+    sd = load_file(lora_path)
+
+    print(f"create LoRA network")
+    lora_network: LoRANetwork = create_network_from_weights(text_encoder, unet, sd, multiplier=alpha)
+    print(f"load LoRA network weights")
+    lora_network.load_state_dict(sd, False)
+    lora_network.merge_to(alpha)
 
 
 def create_pipeline(
@@ -106,7 +122,13 @@ def create_pipeline(
         logger.info("Enabling xformers memory-efficient attention")
         unet.enable_xformers_memory_efficient_attention()
 
-    # I'll deal with LoRA later...
+    # lora
+    for l in model_config.lora_map:
+        lora_path = data_dir.joinpath(l)
+        if lora_path.is_file():
+            logger.info(f"Loading lora {lora_path}")
+            logger.info(f"alpha = {model_config.lora_map[l]}")
+            load_safetensors_lora(vae, text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
 
     logger.info("Creating AnimationPipeline...")
     pipeline = AnimationPipeline(
