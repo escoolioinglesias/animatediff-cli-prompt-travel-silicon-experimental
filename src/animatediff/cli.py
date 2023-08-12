@@ -5,19 +5,16 @@ from typing import Annotated, Optional
 
 import torch
 import typer
-from diffusers.utils.logging import set_verbosity_error as set_diffusers_verbosity_error
+from diffusers.utils.logging import \
+    set_verbosity_error as set_diffusers_verbosity_error
 from rich.logging import RichHandler
 
 from animatediff import __version__, console, get_dir
 from animatediff.generate import create_pipeline, run_inference
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
-from animatediff.settings import (
-    CKPT_EXTENSIONS,
-    InferenceConfig,
-    ModelConfig,
-    get_infer_config,
-    get_model_config,
-)
+from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
+                                  ModelConfig, get_infer_config,
+                                  get_model_config)
 from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
 from animatediff.utils.util import path_from_cwd, save_frames, save_video
@@ -294,7 +291,7 @@ def generate(
     save_config_path = save_dir.joinpath("prompt.json")
     save_config_path.write_text(model_config.json(), encoding="utf-8")
 
-    num_prompts = len(model_config.prompt)
+    num_prompts = 1
     num_negatives = len(model_config.n_prompt)
     num_seeds = len(model_config.seed)
     gen_total = num_prompts * repeats  # total number of generations
@@ -306,7 +303,7 @@ def generate(
     gen_num = 0  # global generation index
     # repeat the prompts if we're doing multiple runs
     for _ in range(repeats):
-        for prompt in model_config.prompt:
+        if model_config.prompt_map:
             # get the index of the prompt, negative, and seed
             idx = gen_num % num_prompts
             logger.info(f"Running generation {gen_num + 1} of {gen_total} (prompt {idx + 1})")
@@ -322,16 +319,13 @@ def generate(
             logger.info(f"Generation seed: {seed}")
 
             prompt_map = {}
-            if not model_config.prompt_map:
-                prompt_map = {0:prompt}
-            else:
-                for k in model_config.prompt_map.keys():
-                    if int(k) < length:
-                        prompt_map[int(k)]=model_config.prompt_map[k]
+            for k in model_config.prompt_map.keys():
+                if int(k) < length:
+                    prompt_map[int(k)]=model_config.prompt_map[k]
 
             output = run_inference(
                 pipeline=pipeline,
-                prompt=prompt,
+                prompt="this is dummy string",
                 n_prompt=n_prompt,
                 seed=seed,
                 steps=model_config.steps,
