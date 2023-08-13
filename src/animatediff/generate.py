@@ -2,10 +2,13 @@ import logging
 import re
 from os import PathLike
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, List, Union
 
 import torch
-from diffusers import AutoencoderKL, StableDiffusionPipeline
+from diffusers import (AutoencoderKL, ControlNetModel, DiffusionPipeline,
+                       StableDiffusionControlNetImg2ImgPipeline,
+                       StableDiffusionPipeline)
+from tqdm.rich import tqdm
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from animatediff import get_dir
@@ -17,7 +20,7 @@ from animatediff.settings import InferenceConfig, ModelConfig
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
-from animatediff.utils.util import save_video
+from animatediff.utils.util import get_resized_images, save_video
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ default_base_path = data_dir.joinpath("models/huggingface/stable-diffusion-v1-5"
 re_clean_prompt = re.compile(r"[^\w\-, ]")
 
 
-def load_safetensors_lora(vae, text_encoder, unet, lora_path, alpha=0.75):
+def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animatediff=True):
     from safetensors.torch import load_file
 
     from animatediff.utils.lora_diffusers import (LoRANetwork,
@@ -36,7 +39,7 @@ def load_safetensors_lora(vae, text_encoder, unet, lora_path, alpha=0.75):
     sd = load_file(lora_path)
 
     print(f"create LoRA network")
-    lora_network: LoRANetwork = create_network_from_weights(text_encoder, unet, sd, multiplier=alpha)
+    lora_network: LoRANetwork = create_network_from_weights(text_encoder, unet, sd, multiplier=alpha, is_animatediff=is_animatediff)
     print(f"load LoRA network weights")
     lora_network.load_state_dict(sd, False)
     lora_network.merge_to(alpha)
@@ -128,7 +131,7 @@ def create_pipeline(
         if lora_path.is_file():
             logger.info(f"Loading lora {lora_path}")
             logger.info(f"alpha = {model_config.lora_map[l]}")
-            load_safetensors_lora(vae, text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
+            load_safetensors_lora(text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
 
     logger.info("Creating AnimationPipeline...")
     pipeline = AnimationPipeline(
@@ -145,6 +148,93 @@ def create_pipeline(
 
     return pipeline
 
+def create_us_pipeline(
+    model_config: ModelConfig = ...,
+    infer_config: InferenceConfig = ...,
+    use_xformers: bool = True,
+) -> DiffusionPipeline:
+
+    # set up scheduler
+    sched_kwargs = infer_config.noise_scheduler_kwargs
+    scheduler = get_scheduler(model_config.scheduler, sched_kwargs)
+    logger.info(f'Using scheduler "{model_config.scheduler}" ({scheduler.__class__.__name__})')
+
+    controlnet = ControlNetModel.from_pretrained('lllyasviel/control_v11f1e_sd15_tile')
+
+    # Load the checkpoint weights into the pipeline
+    pipeline:DiffusionPipeline
+
+    if model_config.path is not None:
+        model_path = data_dir.joinpath(model_config.path)
+        logger.info(f"Loading weights from {model_path}")
+        if model_path.is_file():
+
+            def is_empty_dir(path):
+                import os
+                return len(os.listdir(path)) == 0
+
+            save_path = data_dir.joinpath("models/huggingface/" + model_path.stem + "_" + str(model_path.stat().st_size))
+            save_path.mkdir(exist_ok=True)
+            if save_path.is_dir() and is_empty_dir(save_path):
+                # StableDiffusionControlNetImg2ImgPipeline.from_single_file does not exist in version 18.2
+                logger.debug("Loading from single checkpoint file")
+                tmp_pipeline = StableDiffusionPipeline.from_single_file(
+                    pretrained_model_link_or_path=str(model_path.absolute())
+                )
+                tmp_pipeline.save_pretrained(save_path, safe_serialization=True)
+                del tmp_pipeline
+
+            pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                save_path,
+                controlnet=controlnet,
+                local_files_only=False,
+                load_safety_checker=False,
+                safety_checker=None,
+            )
+
+        elif model_path.is_dir():
+            logger.debug("Loading from Diffusers model directory")
+            pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                model_path,
+                controlnet=controlnet,
+                local_files_only=True,
+                load_safety_checker=False,
+                safety_checker=None,
+            )
+        else:
+            raise FileNotFoundError(f"model_path {model_path} is not a file or directory")
+    else:
+        ValueError("model_config.path is invalid")
+
+    pipeline.scheduler = scheduler
+
+    # enable xformers if available
+    if use_xformers:
+        logger.info("Enabling xformers memory-efficient attention")
+        pipeline.enable_xformers_memory_efficient_attention()
+
+    # lora
+    for l in model_config.lora_map:
+        lora_path = data_dir.joinpath(l)
+        if lora_path.is_file():
+            logger.info(f"Loading lora {lora_path}")
+            logger.info(f"alpha = {model_config.lora_map[l]}")
+            load_safetensors_lora(pipeline.text_encoder, pipeline.unet, lora_path, alpha=model_config.lora_map[l],is_animatediff=False)
+
+    # Load TI embeddings
+    load_text_embeddings(pipeline)
+
+    return pipeline
+
+
+def seed_everything(seed):
+    import random
+
+    import numpy as np
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
 def run_inference(
     pipeline: AnimationPipeline,
@@ -168,10 +258,10 @@ def run_inference(
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
-    if seed != -1:
-        torch.manual_seed(seed)
-    else:
+    if seed == -1:
         seed = torch.seed()
+
+    seed_everything(seed)
 
     pipeline_output = pipeline(
         prompt=prompt,
@@ -192,7 +282,7 @@ def run_inference(
     logger.info("Generation complete, saving...")
 
     # Trim and clean up the prompt for filename use
-    prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt.split(",")]
+    prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
     prompt_str = "_".join((prompt_tags[:6]))
 
     # generate the output filename and save the video
@@ -204,3 +294,122 @@ def run_inference(
 
     logger.info(f"Saved sample to {out_file}")
     return pipeline_output
+
+
+def run_upscale(
+    org_imgs: List[str],
+    pipeline: DiffusionPipeline,
+    prompt_map: Dict[int, str] = None,
+    n_prompt: str = ...,
+    seed: int = -1,
+    steps: int = 25,
+    strength: float = 0.5,
+    guidance_scale: float = 7.5,
+    clip_skip: int = 1,
+    us_width: int = 512,
+    us_height: int = 512,
+    idx: int = 0,
+    out_dir: PathLike = ...,
+    upscale_config:Dict[str, Any]=None,
+):
+    from animatediff.utils.lpw_stable_diffusion import lpw_encode_prompt
+
+    if us_width < 0 and us_height < 0:
+        logger.info(f"invalid width,height: {us_width},{us_height}")
+        return None
+
+    images = get_resized_images(org_imgs, us_width, us_height)
+
+    steps = steps if "steps" not in upscale_config else upscale_config["steps"]
+    scheduler = scheduler if "scheduler" not in upscale_config else upscale_config["scheduler"]
+    guidance_scale = guidance_scale if "guidance_scale" not in upscale_config else upscale_config["guidance_scale"]
+    clip_skip = clip_skip if "clip_skip" not in upscale_config else upscale_config["clip_skip"]
+    strength = strength if "strength" not in upscale_config else upscale_config["strength"]
+
+    generator = torch.manual_seed(seed)
+
+    seed_everything(seed)
+
+    prompt_embeds_map = {}
+    prompt_map = dict(sorted(prompt_map.items()))
+    neg_embeds = None
+
+    for key_frame in prompt_map:
+        prompt_embeds,neg_embeds = lpw_encode_prompt(
+            pipe=pipeline,
+            prompt=prompt_map[key_frame],
+            do_classifier_free_guidance=guidance_scale > 1.0,
+            negative_prompt=n_prompt,
+        )
+        prompt_embeds_map[key_frame] = prompt_embeds
+
+    key_first =list(prompt_map.keys())[0]
+    key_last =list(prompt_map.keys())[-1]
+
+    def get_current_prompt_embeds(
+            center_frame: int = 0,
+            video_length : int = 0
+            ):
+
+        key_prev = key_last
+        key_next = key_first
+
+        for p in prompt_map.keys():
+            if p > center_frame:
+                key_next = p
+                break
+            key_prev = p
+
+        dist_prev = center_frame - key_prev
+        if dist_prev < 0:
+            dist_prev += video_length
+        dist_next = key_next - center_frame
+        if dist_next < 0:
+            dist_next += video_length
+
+        if key_prev == key_next or dist_prev + dist_next == 0:
+            return prompt_embeds_map[key_prev]
+
+        rate = dist_prev / (dist_prev + dist_next)
+
+        return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
+
+    out_images=[]
+
+    for i, condition_image in enumerate(tqdm(images, desc=f"Upscaling...")):
+
+        prompt_embeds = get_current_prompt_embeds(i, len(images))
+
+        logger.info(f"w {condition_image.size[0]}")
+        logger.info(f"h {condition_image.size[1]}")
+
+        out_image = pipeline(
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=neg_embeds,
+            image=condition_image,
+            control_image=condition_image,
+            width=condition_image.size[0],
+            height=condition_image.size[1],
+            strength=strength,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            generator=generator,
+        ).images[0]
+
+        out_images.append(out_image)
+
+    # Trim and clean up the prompt for filename use
+    prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
+    prompt_str = "_".join((prompt_tags[:6]))
+
+    # generate the output filename and save the video
+    out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}.gif")
+
+    out_images[0].save(
+        fp=out_file, format="GIF", append_images=out_images[1:], save_all=True, duration=(1 / 8 * 1000), loop=0
+    )
+
+    logger.info(f"Saved sample to {out_file}")
+
+    return out_images
+

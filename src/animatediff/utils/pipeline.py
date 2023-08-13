@@ -23,13 +23,26 @@ def send_to_device(
 
     # Freeze model weights and force-disable training
     if freeze or compile:
-        pipeline.freeze()
+#        pipeline.freeze()
+        pipeline.vae.requires_grad_(False)
+        pipeline.unet.requires_grad_(False)
+        pipeline.text_encoder.requires_grad_(False)
+        pipeline.unet.eval()
+        pipeline.vae.eval()
+        pipeline.text_encoder.eval()
+
         pipeline.unet.train = nop_train
         pipeline.vae.train = nop_train
         pipeline.text_encoder.train = nop_train
 
     unet_dtype, tenc_dtype, vae_dtype = get_model_dtypes(device, force_half)
     model_memory_format = get_memory_format(device)
+
+    if hasattr(pipeline, 'controlnet'):
+        unet_dtype = tenc_dtype = vae_dtype
+
+        logger.info(f"-> Selected data types: {unet_dtype=},{tenc_dtype=},{vae_dtype=}")
+        pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
 
     pipeline.unet = pipeline.unet.to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
     pipeline.text_encoder = pipeline.text_encoder.to(device=device, dtype=tenc_dtype)

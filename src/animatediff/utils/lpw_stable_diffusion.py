@@ -375,6 +375,48 @@ def get_weighted_text_embeddings(
     return text_embeddings, None
 
 
+def lpw_encode_prompt(
+    pipe: DiffusionPipeline,
+    prompt:str,
+    do_classifier_free_guidance:bool,
+    negative_prompt:Optional[str] = None,
+    max_embeddings_multiples:Optional[int] = 3,
+):
+    r"""
+    Encodes the prompt into text encoder hidden states.
+
+    Args:
+        prompt (`str` or `list(int)`):
+            prompt to be encoded
+        do_classifier_free_guidance (`bool`):
+            whether to use classifier free guidance or not
+        negative_prompt (`str` or `List[str]`):
+            The prompt or prompts not to guide the image generation. Ignored when not using guidance (i.e., ignored
+            if `guidance_scale` is less than `1`).
+        max_embeddings_multiples (`int`, *optional*, defaults to `3`):
+            The max multiple length of prompt embeddings compared to the max output length of text encoder.
+    """
+
+    if negative_prompt is None:
+        negative_prompt = [""]
+    elif isinstance(negative_prompt, str):
+        negative_prompt = [negative_prompt]
+
+    if isinstance(pipe, TextualInversionLoaderMixin):
+        prompt = pipe.maybe_convert_prompt(prompt, pipe.tokenizer)
+        if do_classifier_free_guidance:
+            negative_prompt = pipe.maybe_convert_prompt(negative_prompt, pipe.tokenizer)
+
+    prompt_embeds1, negative_prompt_embeds1 = get_weighted_text_embeddings(
+        pipe=pipe,
+        prompt=prompt,
+        uncond_prompt=negative_prompt if do_classifier_free_guidance else None,
+        max_embeddings_multiples=max_embeddings_multiples,
+    )
+
+    return prompt_embeds1, negative_prompt_embeds1
+
+
 def preprocess_image(image, batch_size):
     w, h = image.size
     w, h = (x - x % 8 for x in (w, h))  # resize to integer multiple of 8

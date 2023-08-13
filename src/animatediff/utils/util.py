@@ -1,5 +1,6 @@
 from os import PathLike
 from pathlib import Path
+from typing import List
 
 import torch
 from einops import rearrange
@@ -14,8 +15,13 @@ def save_frames(video: Tensor, frames_dir: PathLike):
     frames_dir.mkdir(parents=True, exist_ok=True)
     frames = rearrange(video, "b c t h w -> t b c h w")
     for idx, frame in enumerate(tqdm(frames, desc=f"Saving frames to {frames_dir.stem}")):
-        save_image(frame, frames_dir.joinpath(f"{idx:03d}.png"))
+        save_image(frame, frames_dir.joinpath(f"{idx:04d}.png"))
 
+def save_imgs(imgs:List[Image.Image], frames_dir: PathLike):
+    frames_dir = Path(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for idx, img in enumerate(tqdm(imgs, desc=f"Saving frames to {frames_dir.stem}")):
+        img.save( frames_dir.joinpath(f"{idx:04d}.png") )
 
 def save_video(video: Tensor, save_path: PathLike, fps: int = 8):
     save_path = Path(save_path)
@@ -42,3 +48,26 @@ def save_video(video: Tensor, save_path: PathLike, fps: int = 8):
 def path_from_cwd(path: PathLike) -> str:
     path = Path(path)
     return str(path.absolute().relative_to(Path.cwd()))
+
+
+def resize_for_condition_image(input_image: Image, us_width: int, us_height: int):
+    input_image = input_image.convert("RGB")
+    H = int(round(us_height / 64.0)) * 64
+    W = int(round(us_width / 64.0)) * 64
+    img = input_image.resize((W, H), resample=Image.LANCZOS)
+    return img
+
+def get_resized_images(org_images_path: List[str], us_width: int, us_height: int):
+
+    images = [Image.open( p ) for p in org_images_path]
+
+    W, H = images[0].size
+
+    if us_width == -1:
+        us_width = W/H * us_height
+    elif us_height == -1:
+        us_height = H/W * us_width
+
+    return [resize_for_condition_image(img, us_width, us_height) for img in images]
+
+

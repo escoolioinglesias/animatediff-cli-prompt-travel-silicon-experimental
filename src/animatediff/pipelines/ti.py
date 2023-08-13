@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import torch
+from diffusers import DiffusionPipeline
 from safetensors.torch import load_file
 from torch import Tensor
 
@@ -93,7 +94,7 @@ def load_embed_weights(path: Path, key: Optional[str] = None) -> Optional[Tensor
 
 
 def load_text_embeddings(
-    pipeline: AnimationPipeline, text_embeds: Optional[tuple[str, torch.Tensor]] = None
+    pipeline: DiffusionPipeline, text_embeds: Optional[tuple[str, torch.Tensor]] = None
 ) -> None:
     if text_embeds is None:
         text_embeds = get_text_embeddings()

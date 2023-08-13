@@ -95,8 +95,7 @@ def get_infer_config(
 
 class ModelConfig(BaseSettings):
     name: str = Field(...)  # Config name, not actually used for much of anything
-    base: Optional[Path] = Field(None)  # Path to base checkpoint (if using a LoRA)
-    path: Path = Field(...)  # Path to the model or LoRA checkpoint
+    path: Path = Field(...)  # Path to the model
     motion_module: Path = Field(...)  # Path to the motion module
     compile: bool = Field(False)  # whether to compile the model with TorchDynamo
     seed: list[int] = Field([])  # Seed(s) for the random number generators
@@ -104,20 +103,17 @@ class ModelConfig(BaseSettings):
     steps: int = 25  # Number of inference steps to run
     guidance_scale: float = 7.5  # CFG scale to use
     clip_skip: int = 1  # skip the last N-1 layers of the CLIP text encoder
-#    prompt: list[str] = Field([])  # Prompt(s) to use
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
     prompt_map: Dict[str,str]= Field({})
     lora_map: Dict[str,float]= Field({})
+    upscale_config: Dict[str,Any]= Field({})
 
     class Config(JsonConfig):
         json_config_path: Path
 
     @property
     def save_name(self):
-        if self.base is not None and str(self.base) != ".":
-            return f"{self.name.lower()}-{self.path.stem.lower()}-{self.base.stem.lower()}"
-        else:
-            return f"{self.name.lower()}-{self.path.stem.lower()}"
+        return f"{self.name.lower()}-{self.path.stem.lower()}"
 
 
 @lru_cache(maxsize=2)

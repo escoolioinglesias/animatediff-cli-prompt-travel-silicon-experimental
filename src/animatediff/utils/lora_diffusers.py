@@ -235,7 +235,7 @@ class LoRAModule(torch.nn.Module):
 
 # Create network from weights for inference, weights are not loaded here
 def create_network_from_weights(
-    text_encoder: Union[CLIPTextModel, List[CLIPTextModel]], unet: UNet2DConditionModel, weights_sd: Dict, multiplier: float = 1.0
+    text_encoder: Union[CLIPTextModel, List[CLIPTextModel]], unet: UNet2DConditionModel, weights_sd: Dict, multiplier: float = 1.0, is_animatediff = True,
 ):
     # get dim/alpha mapping
     modules_dim = {}
@@ -261,7 +261,7 @@ def create_network_from_weights(
         if key not in modules_alpha:
             modules_alpha[key] = modules_dim[key]
 
-    return LoRANetwork(text_encoder, unet, multiplier=multiplier, modules_dim=modules_dim, modules_alpha=modules_alpha)
+    return LoRANetwork(text_encoder, unet, multiplier=multiplier, modules_dim=modules_dim, modules_alpha=modules_alpha, is_animatediff=is_animatediff)
 
 
 def merge_lora_weights(pipe, weights_sd: Dict, multiplier: float = 1.0):
@@ -275,9 +275,10 @@ def merge_lora_weights(pipe, weights_sd: Dict, multiplier: float = 1.0):
 
 # block weightや学習に対応しない簡易版 / simple version without block weight and training
 class LoRANetwork(torch.nn.Module):
-    UNET_TARGET_REPLACE_MODULE = ["Transformer3DModel"]
-#    UNET_TARGET_REPLACE_MODULE = ["Transformer3DModel", "Attention"]
-    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3 = ["ResnetBlock3D", "Downsample3D", "Upsample3D"]
+    UNET_TARGET_REPLACE_MODULE_TYPE1 = ["Transformer3DModel"]
+    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3_TYPE1 = ["ResnetBlock3D", "Downsample3D", "Upsample3D"]
+    UNET_TARGET_REPLACE_MODULE_TYPE2 = ["Transformer2DModel"]
+    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3_TYPE2 = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
     TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPMLP"]
     LORA_PREFIX_UNET = "lora_unet"
     LORA_PREFIX_TEXT_ENCODER = "lora_te"
@@ -294,6 +295,7 @@ class LoRANetwork(torch.nn.Module):
         modules_dim: Optional[Dict[str, int]] = None,
         modules_alpha: Optional[Dict[str, int]] = None,
         varbose: Optional[bool] = False,
+        is_animatediff: bool = True,
     ) -> None:
         super().__init__()
         self.multiplier = multiplier
@@ -370,7 +372,10 @@ class LoRANetwork(torch.nn.Module):
             print(f"skipped {len(skipped_te)} modules because of missing weight.")
 
         # extend U-Net target modules to include Conv2d 3x3
-        target_modules = LoRANetwork.UNET_TARGET_REPLACE_MODULE + LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3
+        if is_animatediff:
+            target_modules = LoRANetwork.UNET_TARGET_REPLACE_MODULE_TYPE1 + LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3_TYPE1
+        else:
+            target_modules = LoRANetwork.UNET_TARGET_REPLACE_MODULE_TYPE2 + LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3_TYPE2
 
         self.unet_loras: List[LoRAModule]
         self.unet_loras, skipped_un = create_modules(True, None, unet, target_modules)
