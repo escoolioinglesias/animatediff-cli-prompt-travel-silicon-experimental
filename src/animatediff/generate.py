@@ -233,7 +233,7 @@ def seed_everything(seed):
     import numpy as np
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    np.random.seed(seed % (2**32))
     random.seed(seed)
 
 def run_inference(
@@ -318,6 +318,8 @@ def run_upscale(
         logger.info(f"invalid width,height: {us_width},{us_height}")
         return None
 
+    pipeline.set_progress_bar_config(disable=True)
+
     images = get_resized_images(org_imgs, us_width, us_height)
 
     steps = steps if "steps" not in upscale_config else upscale_config["steps"]
@@ -380,8 +382,8 @@ def run_upscale(
 
         prompt_embeds = get_current_prompt_embeds(i, len(images))
 
-        logger.info(f"w {condition_image.size[0]}")
-        logger.info(f"h {condition_image.size[1]}")
+#        logger.info(f"w {condition_image.size[0]}")
+#        logger.info(f"h {condition_image.size[1]}")
 
         out_image = pipeline(
             prompt_embeds=prompt_embeds,
