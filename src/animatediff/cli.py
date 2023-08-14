@@ -116,7 +116,7 @@ def generate(
             "--length",
             "-L",
             min=1,
-            max=999,
+            max=9999,
             help="Number of frames to generate",
             rich_help_panel="Generation",
         ),
