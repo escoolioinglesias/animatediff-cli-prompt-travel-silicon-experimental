@@ -10,12 +10,18 @@ It seems to work surprisingly well!
 - standing -> walking -> spider webs:2.0 -> sitting
 - Left : output of "animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16"
 - Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512"
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/bb72d69e-8f00-434f-af85-497b0f574cef" muted="false"></video></div>
+<br>
+
+- normal -> smile -> crying+rain -> anger+rain
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/2f1de542-7084-417b-9baa-59a55fdd0e1b" muted="false"></video></div>
+<br>
 
 
 ### Installation(for windows)
 Same as the original animatediff-cli
 ```sh
-git clone https://github.com/s9roll7/animatediff-cli.git
+git clone https://github.com/s9roll7/animatediff-cli-prompt-travel.git
 cd animatediff-cli
 py -3.10 -m venv venv
 venv\Scripts\activate.bat
