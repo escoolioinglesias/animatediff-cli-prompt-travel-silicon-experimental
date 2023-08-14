@@ -1,3 +1,96 @@
+# AnimateDiff prompt travel
+
+AnimateDiff with prompt travel
+
+I added a experimental feature to animatediff-cli to change the prompt in the middle of the frame.
+
+It seems to work surprisingly well!
+
+### Example
+- standing -> walking -> spider webs:2.0 -> sitting
+- Left : output of "animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16"
+- Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512"
+
+
+### Installation(for windows)
+Same as the original animatediff-cli
+```sh
+git clone https://github.com/s9roll7/animatediff-cli.git
+cd animatediff-cli
+py -3.10 -m venv venv
+venv\Scripts\activate.bat
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+python -m pip install -e .
+python -m pip install xformers
+```
+(https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)
+
+
+### How To Use
+Almost same as the original animatediff-cli, but with a slight change in config format.
+```json
+# prompt_travel.json
+{
+  "name": "sample",
+  "path": "share/Stable-diffusion/mistoonAnime_v20.safetensors",  # Specify Checkpoint as a path relative to /animatediff-cli/data
+  "motion_module": "models/motion-module/mm_sd_v14.ckpt",         # Specify motion module as a path relative to /animatediff-cli/data
+  "compile": false,
+  "seed": [
+    341774366206100         # -1 means random
+  ],
+  "scheduler": "ddim",
+  "steps": 40,
+  "guidance_scale": 20,     # cfg scale
+  "clip_skip": 2,
+  "prompt_map": {           # "FRAME" : "PROMPT" format
+    "0":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,smile standing, clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
+    "32":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((walking))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
+    "64":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((running))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:2.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear,wide angle lens, fish eye effect",
+    "96":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((sitting))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear"
+  },
+  "n_prompt": [
+    "(worst quality, low quality:1.4),nudity,simple background,border,mouth closed,text, patreon,bed,bedroom,white background,((monochrome)),sketch,(pink body:1.4),7 arms,8 arms,4 arms"
+  ],
+  "lora_map": {             # "PATH_TO_LORA" : STRENGTH format
+    "share/Lora/muffet_v2.safetensors" : 1.0,                     # Specify lora as a path relative to /animatediff-cli/data
+    "share/Lora/add_detail.safetensors" : 1.0                     # Lora support is limited. Not all formats can be used!!!
+  },
+  "upscale_config": {       # config for tile-upscale
+    "scheduler": "ddim",
+    "steps": 20,
+    "strength": 0.5,
+    "guidance_scale": 10
+  }
+}
+```
+
+```sh
+cd animatediff-cli
+venv\Scripts\activate.bat
+
+# with this setup, it took about a minute to generate in my environment(RTX4090). VRAM usage was 6-7 GB
+# width 256 / height 384 / length 128 frames / context 16 frames
+animatediff generate -c config/prompts/prompt_travel.json -W 256 -H 384 -L128 -C 16
+# 5min / 9-10GB
+animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16
+
+# upscale using controlnet tile
+# specify the directory of the frame generated in the above step
+# here, width=512 is specified, but even if the original size is 512, it is effective in increasing detail
+animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512
+
+```
+
+### Limitations
+- lora support is limited. Not all formats can be used!!!
+- It is not possible to specify lora in the prompt.
+
+
+Below is the original readme.
+
+----------------------------------------------------------
+
+
 # animatediff
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/neggles/animatediff-cli/main.svg)](https://results.pre-commit.ci/latest/github/neggles/animatediff-cli/main)
 

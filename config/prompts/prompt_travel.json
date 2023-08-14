@@ -1,0 +1,32 @@
+{
+  "name": "sample",
+  "path": "share/Stable-diffusion/mistoonAnime_v20.safetensors",
+  "motion_module": "models/motion-module/mm_sd_v14.ckpt",
+  "compile": false,
+  "seed": [
+    341774366206100
+  ],
+  "scheduler": "ddim",
+  "steps": 40,
+  "guidance_scale": 20,
+  "clip_skip": 2,
+  "prompt_map": {
+    "0":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,smile standing, clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
+    "32":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((walking))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
+    "64":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((running))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:2.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear,wide angle lens, fish eye effect",
+    "96":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((sitting))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear"
+  },
+  "n_prompt": [
+    "(worst quality, low quality:1.4),nudity,simple background,border,mouth closed,text, patreon,bed,bedroom,white background,((monochrome)),sketch,(pink body:1.4),7 arms,8 arms,4 arms"
+  ],
+  "lora_map": {
+    "share/Lora/muffet_v2.safetensors" : 1.0,
+    "share/Lora/add_detail.safetensors" : 1.0
+  },
+  "upscale_config": {
+    "scheduler": "ddim",
+    "steps": 20,
+    "strength": 0.5,
+    "guidance_scale": 10
+  }
+}
