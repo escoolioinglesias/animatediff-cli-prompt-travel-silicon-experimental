@@ -18,6 +18,7 @@ from animatediff.pipelines import AnimationPipeline, load_text_embeddings
 from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
                                   ModelConfig, get_infer_config,
                                   get_model_config)
+from animatediff.utils.civitai2config import generate_config_from_civitai_info
 from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
 from animatediff.utils.util import (path_from_cwd, save_frames, save_imgs,
@@ -560,6 +561,52 @@ def tile_upscale(
     cli.info
 
     return save_dir
+
+@cli.command()
+def civitai2config(
+    lora_dir: Annotated[
+        Path,
+        typer.Argument(path_type=Path, file_okay=False, exists=True, help="Path to loras directory"),
+    ] = ...,
+    config_org: Annotated[
+        Path,
+        typer.Option(
+            "--config-org",
+            "-c",
+            path_type=Path,
+            dir_okay=False,
+            exists=True,
+            help="Path to original config file",
+        ),
+    ] = Path("config/prompts/prompt_travel.json"),
+    out_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--out-dir",
+            "-o",
+            path_type=Path,
+            file_okay=False,
+            help="Target directory for generated configs",
+        ),
+    ] = Path("config/prompts/converted/"),
+    lora_weight: Annotated[
+        float,
+        typer.Option(
+            "--lora_weight",
+            "-l",
+            min=0.0,
+            max=3.0,
+            help="Lora weight",
+        ),
+    ] = 0.75,
+):
+    """Generate config file from *.civitai.info"""
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Generate config files from: {lora_dir}")
+    generate_config_from_civitai_info(lora_dir,config_org,out_dir, lora_weight)
+    logger.info(f"saved at: {out_dir.absolute()}")
 
 
 @cli.command()
