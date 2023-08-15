@@ -334,16 +334,28 @@ def run_upscale(
 
     prompt_embeds_map = {}
     prompt_map = dict(sorted(prompt_map.items()))
-    neg_embeds = None
+    negative = None
 
-    for key_frame in prompt_map:
-        prompt_embeds,neg_embeds = lpw_encode_prompt(
-            pipe=pipeline,
-            prompt=prompt_map[key_frame],
-            do_classifier_free_guidance=guidance_scale > 1.0,
-            negative_prompt=n_prompt,
-        )
-        prompt_embeds_map[key_frame] = prompt_embeds
+    do_classifier_free_guidance=guidance_scale > 1.0
+
+    prompt_list = [prompt_map[key_frame] for key_frame in prompt_map.keys()]
+
+    prompt_embeds,neg_embeds = lpw_encode_prompt(
+        pipe=pipeline,
+        prompt=prompt_list,
+        do_classifier_free_guidance=do_classifier_free_guidance,
+        negative_prompt=n_prompt,
+    )
+
+    if do_classifier_free_guidance:
+        negative = neg_embeds.chunk(neg_embeds.shape[0], 0)
+        positive = prompt_embeds.chunk(prompt_embeds.shape[0], 0)
+    else:
+        negative = [None]
+        positive = prompt_embeds.chunk(prompt_embeds.shape[0], 0)
+
+    for i, key_frame in enumerate(prompt_map):
+        prompt_embeds_map[key_frame] = positive[i]
 
     key_first =list(prompt_map.keys())[0]
     key_last =list(prompt_map.keys())[-1]
@@ -380,14 +392,14 @@ def run_upscale(
 
     for i, condition_image in enumerate(tqdm(images, desc=f"Upscaling...")):
 
-        prompt_embeds = get_current_prompt_embeds(i, len(images))
+        cur_positive = get_current_prompt_embeds(i, len(images))
 
 #        logger.info(f"w {condition_image.size[0]}")
 #        logger.info(f"h {condition_image.size[1]}")
 
         out_image = pipeline(
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=neg_embeds,
+            prompt_embeds=cur_positive,
+            negative_prompt_embeds=negative[0],
             image=condition_image,
             control_image=condition_image,
             width=condition_image.size[0],

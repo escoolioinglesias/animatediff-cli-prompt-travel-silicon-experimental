@@ -602,18 +602,31 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         prompt_embeds_map = {}
         prompt_map = dict(sorted(prompt_map.items()))
 
-        for key_frame in prompt_map:
-            prompt_embeds = self._encode_prompt(
-                prompt_map[key_frame],
-                device,
-                num_videos_per_prompt,
-                do_classifier_free_guidance,
-                negative_prompt,
-                prompt_embeds=None,
-                negative_prompt_embeds=negative_prompt_embeds,
-                clip_skip=clip_skip,
-            )
-            prompt_embeds_map[key_frame] = prompt_embeds
+        prompt_list = [prompt_map[key_frame] for key_frame in prompt_map.keys()]
+        prompt_embeds = self._encode_prompt(
+            prompt_list,
+            device,
+            num_videos_per_prompt,
+            do_classifier_free_guidance,
+            negative_prompt,
+            prompt_embeds=None,
+            negative_prompt_embeds=None,
+            clip_skip=clip_skip,
+        )
+
+        if do_classifier_free_guidance:
+            negative, positive = prompt_embeds.chunk(2, 0)
+            negative = negative.chunk(negative.shape[0], 0)
+            positive = positive.chunk(positive.shape[0], 0)
+        else:
+            positive = prompt_embeds
+            positive = positive.chunk(positive.shape[0], 0)
+
+        for i, key_frame in enumerate(prompt_map):
+            if do_classifier_free_guidance:
+                prompt_embeds_map[key_frame] = torch.cat([negative[i] , positive[i]])
+            else:
+                prompt_embeds_map[key_frame] = positive[i]
 
         key_first =list(prompt_map.keys())[0]
         key_last =list(prompt_map.keys())[-1]
