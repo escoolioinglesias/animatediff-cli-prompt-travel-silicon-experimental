@@ -390,9 +390,9 @@ def tile_upscale(
             exists=True,
             readable=True,
             dir_okay=False,
-            help="Path to a prompt configuration JSON file",
+            help="Path to a prompt configuration JSON file. default is frames_dir/../prompt.json",
         ),
-    ] = Path("config/prompts/01-ToonYou.json"),
+    ] = None,
     width: Annotated[
         int,
         typer.Option(
@@ -466,6 +466,11 @@ def tile_upscale(
     # be quiet, diffusers. we care not for your safety checker
     set_diffusers_verbosity_error()
 
+    if not config_path:
+        tmp = frames_dir.parent.joinpath("prompt.json")
+        if tmp.is_file():
+            config_path = tmp
+
     config_path = config_path.absolute()
     logger.info(f"Using generation config: {path_from_cwd(config_path)}")
     model_config: ModelConfig = get_model_config(config_path)
@@ -495,6 +500,9 @@ def tile_upscale(
         us_pipeline = send_to_device(
             us_pipeline, device, freeze=True, force_half=force_half_vae, compile=model_config.compile
         )
+
+
+    model_config.result = { "original_frames": str(frames_dir) }
 
 
     # save config to output directory

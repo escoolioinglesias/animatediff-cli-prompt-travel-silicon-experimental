@@ -107,6 +107,7 @@ class ModelConfig(BaseSettings):
     prompt_map: Dict[str,str]= Field({})
     lora_map: Dict[str,float]= Field({})
     upscale_config: Dict[str,Any]= Field({})
+    result: Dict[str,Any]= Field({})
 
     class Config(JsonConfig):
         json_config_path: Path
