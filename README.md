@@ -65,7 +65,39 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "scheduler": "ddim",
     "steps": 20,
     "strength": 0.5,
-    "guidance_scale": 10
+    "guidance_scale": 10,
+    "controlnet_tile": {    # config for controlnet tile
+      "enable": true,       # enable/disable (important)
+      "controlnet_conditioning_scale": 1.0,     # control weight (important)
+      "guess_mode": false,
+      "control_guidance_start": 0.0,      # starting control step
+      "control_guidance_end": 1.0         # ending control step
+    },
+    "controlnet_line_anime": {  # config for controlnet line anime
+      "enable": false,
+      "controlnet_conditioning_scale": 1.0,
+      "guess_mode": false,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0
+    },
+    "controlnet_ip2p": {  # config for controlnet ip2p
+      "enable": false,
+      "controlnet_conditioning_scale": 0.5,
+      "guess_mode": false,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0
+    },
+    "controlnet_ref": {   # config for controlnet ref
+      "enable": false,             # enable/disable (important)
+      "use_frame_as_ref_image": false,   # use original frames as ref_image for each upscale (important)
+      "use_1st_frame_as_ref_image": false,   # use 1st original frame as ref_image for all upscale (important)
+      "ref_image": "ref_image/path_to_your_ref_img.jpg",   # use specified image file as ref_image for all upscale (important)
+      "attention_auto_machine_weight": 1.0,
+      "gn_auto_machine_weight": 1.0,
+      "style_fidelity": 0.25,       # control weight-like parameter(important)
+      "reference_attn": true,       # [attn=true , adain=false] means "reference_only"
+      "reference_adain": false
+    }
   }
 }
 ```
@@ -80,11 +112,18 @@ animatediff generate -c config/prompts/prompt_travel.json -W 256 -H 384 -L128 -C
 # 5min / 9-10GB
 animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16
 
-# upscale using controlnet tile
+# upscale using controlnet (tile, line anime, ip2p, ref)
 # specify the directory of the frame generated in the above step
+# default config path is 'frames_dir/../prompt.json'
 # here, width=512 is specified, but even if the original size is 512, it is effective in increasing detail
 animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512
+```
 
+#### Auto config generation for [Stable-Diffusion-Webui-Civitai-Helper](https://github.com/butaixianran/Stable-Diffusion-Webui-Civitai-Helper) user
+```sh
+# This command parses the *.civitai.info files and automatically generates config files
+# See "animatediff civitai2config -h" for details
+animatediff civitai2config PATH_TO_YOUR_A111_LORA_DIR
 ```
 
 ### Limitations
