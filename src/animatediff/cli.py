@@ -466,6 +466,9 @@ def tile_upscale(
     # be quiet, diffusers. we care not for your safety checker
     set_diffusers_verbosity_error()
 
+    if width < 0 and height < 0:
+        raise ValueError(f"invalid width,height: {width},{height} \n At least one of them must be specified.")
+
     if not config_path:
         tmp = frames_dir.parent.joinpath("prompt.json")
         if tmp.is_file():
@@ -487,12 +490,43 @@ def tile_upscale(
     save_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Will save outputs to ./{path_from_cwd(save_dir)}")
 
+
+    if "controlnet_tile" not in model_config.upscale_config:
+        model_config.upscale_config["controlnet_tile"] = {
+            "enable": True,
+            "controlnet_conditioning_scale": 1.0,
+            "guess_mode": False,
+            "control_guidance_start": 0.0,
+            "control_guidance_end": 1.0,
+        }
+
+    use_controlnet_ref = False
+    use_controlnet_tile = False
+    use_controlnet_line_anime = False
+    use_controlnet_ip2p = False
+
+    if model_config.upscale_config:
+        use_controlnet_ref = model_config.upscale_config["controlnet_ref"]["enable"] if "controlnet_ref" in model_config.upscale_config else False
+        use_controlnet_tile = model_config.upscale_config["controlnet_tile"]["enable"] if "controlnet_tile" in model_config.upscale_config else False
+        use_controlnet_line_anime = model_config.upscale_config["controlnet_line_anime"]["enable"] if "controlnet_line_anime" in model_config.upscale_config else False
+        use_controlnet_ip2p = model_config.upscale_config["controlnet_ip2p"]["enable"] if "controlnet_ip2p" in model_config.upscale_config else False
+
+    if use_controlnet_tile == False:
+        if use_controlnet_line_anime==False:
+            if use_controlnet_ip2p == False:
+                raise ValueError(f"At least one of them should be enabled. {use_controlnet_tile=}, {use_controlnet_line_anime=}, {use_controlnet_ip2p=}")
+
     # beware the pipeline
     us_pipeline = create_us_pipeline(
         model_config=model_config,
         infer_config=infer_config,
         use_xformers=use_xformers,
+        use_controlnet_ref=use_controlnet_ref,
+        use_controlnet_tile=use_controlnet_tile,
+        use_controlnet_line_anime=use_controlnet_line_anime,
+        use_controlnet_ip2p=use_controlnet_ip2p,
     )
+
 
     if us_pipeline.device == device:
         logger.info("Pipeline already on the correct device, skipping device transfer")
@@ -540,6 +574,7 @@ def tile_upscale(
                 prompt_map[int(k)]=model_config.prompt_map[k]
 
         if model_config.upscale_config:
+
             upscaled_output = run_upscale(
                 org_imgs=org_images,
                 pipeline=us_pipeline,
@@ -553,7 +588,11 @@ def tile_upscale(
                 us_height=height,
                 idx=gen_num,
                 out_dir=save_dir,
-                upscale_config=model_config.upscale_config
+                upscale_config=model_config.upscale_config,
+                use_controlnet_ref=use_controlnet_ref,
+                use_controlnet_tile=use_controlnet_tile,
+                use_controlnet_line_anime=use_controlnet_line_anime,
+                use_controlnet_ip2p=use_controlnet_ip2p,
             )
             torch.cuda.empty_cache()
             if upscaled_output is not None:

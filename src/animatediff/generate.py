@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import torch
+from controlnet_aux import LineartAnimeDetector
 from diffusers import (AutoencoderKL, ControlNetModel, DiffusionPipeline,
                        StableDiffusionControlNetImg2ImgPipeline,
                        StableDiffusionPipeline)
@@ -15,6 +16,8 @@ from animatediff import get_dir
 from animatediff.models.clip import CLIPSkipTextModel
 from animatediff.models.unet import UNet3DConditionModel
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
+from animatediff.pipelines.pipeline_controlnet_img2img_reference import \
+    StableDiffusionControlNetImg2ImgReferencePipeline
 from animatediff.schedulers import get_scheduler
 from animatediff.settings import InferenceConfig, ModelConfig
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
@@ -152,6 +155,10 @@ def create_us_pipeline(
     model_config: ModelConfig = ...,
     infer_config: InferenceConfig = ...,
     use_xformers: bool = True,
+    use_controlnet_ref: bool = False,
+    use_controlnet_tile: bool = False,
+    use_controlnet_line_anime: bool = False,
+    use_controlnet_ip2p: bool = False,
 ) -> DiffusionPipeline:
 
     # set up scheduler
@@ -159,7 +166,16 @@ def create_us_pipeline(
     scheduler = get_scheduler(model_config.scheduler, sched_kwargs)
     logger.info(f'Using scheduler "{model_config.scheduler}" ({scheduler.__class__.__name__})')
 
-    controlnet = ControlNetModel.from_pretrained('lllyasviel/control_v11f1e_sd15_tile')
+    controlnet = []
+    if use_controlnet_tile:
+        controlnet.append( ControlNetModel.from_pretrained('lllyasviel/control_v11f1e_sd15_tile') )
+    if use_controlnet_line_anime:
+        controlnet.append( ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15s2_lineart_anime') )
+    if use_controlnet_ip2p:
+        controlnet.append( ControlNetModel.from_pretrained('lllyasviel/control_v11e_sd15_ip2p') )
+
+    if len(controlnet) == 1:
+        controlnet = controlnet[0]
 
     # Load the checkpoint weights into the pipeline
     pipeline:DiffusionPipeline
@@ -184,27 +200,45 @@ def create_us_pipeline(
                 tmp_pipeline.save_pretrained(save_path, safe_serialization=True)
                 del tmp_pipeline
 
-            pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-                save_path,
-                controlnet=controlnet,
-                local_files_only=False,
-                load_safety_checker=False,
-                safety_checker=None,
-            )
+            if use_controlnet_ref:
+                pipeline = StableDiffusionControlNetImg2ImgReferencePipeline.from_pretrained(
+                    save_path,
+                    controlnet=controlnet,
+                    local_files_only=False,
+                    load_safety_checker=False,
+                    safety_checker=None,
+                )
+            else:
+                pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                    save_path,
+                    controlnet=controlnet,
+                    local_files_only=False,
+                    load_safety_checker=False,
+                    safety_checker=None,
+                )
 
         elif model_path.is_dir():
             logger.debug("Loading from Diffusers model directory")
-            pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-                model_path,
-                controlnet=controlnet,
-                local_files_only=True,
-                load_safety_checker=False,
-                safety_checker=None,
-            )
+            if use_controlnet_ref:
+                pipeline = StableDiffusionControlNetImg2ImgReferencePipeline.from_pretrained(
+                    model_path,
+                    controlnet=controlnet,
+                    local_files_only=True,
+                    load_safety_checker=False,
+                    safety_checker=None,
+                )
+            else:
+                pipeline = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                    model_path,
+                    controlnet=controlnet,
+                    local_files_only=True,
+                    load_safety_checker=False,
+                    safety_checker=None,
+                )
         else:
             raise FileNotFoundError(f"model_path {model_path} is not a file or directory")
     else:
-        ValueError("model_config.path is invalid")
+        raise ValueError("model_config.path is invalid")
 
     pipeline.scheduler = scheduler
 
@@ -311,12 +345,12 @@ def run_upscale(
     idx: int = 0,
     out_dir: PathLike = ...,
     upscale_config:Dict[str, Any]=None,
+    use_controlnet_ref: bool = False,
+    use_controlnet_tile: bool = False,
+    use_controlnet_line_anime: bool = False,
+    use_controlnet_ip2p: bool = False,
 ):
     from animatediff.utils.lpw_stable_diffusion import lpw_encode_prompt
-
-    if us_width < 0 and us_height < 0:
-        logger.info(f"invalid width,height: {us_width},{us_height}")
-        return None
 
     pipeline.set_progress_bar_config(disable=True)
 
@@ -327,6 +361,39 @@ def run_upscale(
     guidance_scale = guidance_scale if "guidance_scale" not in upscale_config else upscale_config["guidance_scale"]
     clip_skip = clip_skip if "clip_skip" not in upscale_config else upscale_config["clip_skip"]
     strength = strength if "strength" not in upscale_config else upscale_config["strength"]
+
+    controlnet_conditioning_scale = []
+    guess_mode = []
+    control_guidance_start = []
+    control_guidance_end = []
+
+    # for controlnet tile
+    if use_controlnet_tile:
+        controlnet_conditioning_scale.append(upscale_config["controlnet_tile"]["controlnet_conditioning_scale"])
+        guess_mode.append(upscale_config["controlnet_tile"]["guess_mode"])
+        control_guidance_start.append(upscale_config["controlnet_tile"]["control_guidance_start"])
+        control_guidance_end.append(upscale_config["controlnet_tile"]["control_guidance_end"])
+
+    # for controlnet line_anime
+    if use_controlnet_line_anime:
+        controlnet_conditioning_scale.append(upscale_config["controlnet_line_anime"]["controlnet_conditioning_scale"])
+        guess_mode.append(upscale_config["controlnet_line_anime"]["guess_mode"])
+        control_guidance_start.append(upscale_config["controlnet_line_anime"]["control_guidance_start"])
+        control_guidance_end.append(upscale_config["controlnet_line_anime"]["control_guidance_end"])
+
+    # for controlnet ip2p
+    if use_controlnet_ip2p:
+        controlnet_conditioning_scale.append(upscale_config["controlnet_ip2p"]["controlnet_conditioning_scale"])
+        guess_mode.append(upscale_config["controlnet_ip2p"]["guess_mode"])
+        control_guidance_start.append(upscale_config["controlnet_ip2p"]["control_guidance_start"])
+        control_guidance_end.append(upscale_config["controlnet_ip2p"]["control_guidance_end"])
+
+    # for controlnet ref
+    ref_image = None
+    if use_controlnet_ref:
+        if not upscale_config["controlnet_ref"]["use_frame_as_ref_image"] and not upscale_config["controlnet_ref"]["use_1st_frame_as_ref_image"]:
+            ref_image = get_resized_images([ data_dir.joinpath( upscale_config["controlnet_ref"]["ref_image"] ) ], us_width, us_height)[0]
+
 
     generator = torch.manual_seed(seed)
 
@@ -388,27 +455,90 @@ def run_upscale(
 
         return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
 
+
+    line_anime_processor = LineartAnimeDetector.from_pretrained("lllyasviel/Annotators")
+
+
     out_images=[]
 
-    for i, condition_image in enumerate(tqdm(images, desc=f"Upscaling...")):
+    logger.info(f"{use_controlnet_tile=}")
+    logger.info(f"{use_controlnet_line_anime=}")
+    logger.info(f"{use_controlnet_ip2p=}")
+
+    logger.info(f"{controlnet_conditioning_scale=}")
+    logger.info(f"{guess_mode=}")
+    logger.info(f"{control_guidance_start=}")
+    logger.info(f"{control_guidance_end=}")
+
+
+    for i, org_image in enumerate(tqdm(images, desc=f"Upscaling...")):
 
         cur_positive = get_current_prompt_embeds(i, len(images))
 
 #        logger.info(f"w {condition_image.size[0]}")
 #        logger.info(f"h {condition_image.size[1]}")
+        condition_image = []
 
-        out_image = pipeline(
-            prompt_embeds=cur_positive,
-            negative_prompt_embeds=negative[0],
-            image=condition_image,
-            control_image=condition_image,
-            width=condition_image.size[0],
-            height=condition_image.size[1],
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-        ).images[0]
+        if use_controlnet_tile:
+            condition_image.append( org_image )
+        if use_controlnet_line_anime:
+            condition_image.append( line_anime_processor(org_image) )
+        if use_controlnet_ip2p:
+            condition_image.append( org_image )
+
+        if not use_controlnet_ref:
+            out_image = pipeline(
+                prompt_embeds=cur_positive,
+                negative_prompt_embeds=negative[0],
+                image=org_image,
+                control_image=condition_image,
+                width=org_image.size[0],
+                height=org_image.size[1],
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+
+                controlnet_conditioning_scale= controlnet_conditioning_scale if len(controlnet_conditioning_scale) > 1 else controlnet_conditioning_scale[0],
+                guess_mode= guess_mode[0],
+                control_guidance_start= control_guidance_start if len(control_guidance_start) > 1 else control_guidance_start[0],
+                control_guidance_end= control_guidance_end if len(control_guidance_end) > 1 else control_guidance_end[0],
+
+            ).images[0]
+        else:
+
+            if upscale_config["controlnet_ref"]["use_1st_frame_as_ref_image"]:
+                if i == 0:
+                    ref_image = org_image
+            elif upscale_config["controlnet_ref"]["use_frame_as_ref_image"]:
+                ref_image = org_image
+
+            out_image = pipeline(
+                prompt_embeds=cur_positive,
+                negative_prompt_embeds=negative[0],
+                image=org_image,
+                control_image=condition_image,
+                width=org_image.size[0],
+                height=org_image.size[1],
+                strength=strength,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+
+                controlnet_conditioning_scale= controlnet_conditioning_scale if len(controlnet_conditioning_scale) > 1 else controlnet_conditioning_scale[0],
+                guess_mode= guess_mode[0],
+                # control_guidance_start= control_guidance_start,
+                # control_guidance_end= control_guidance_end,
+
+                ### for controlnet ref
+                ref_image=ref_image,
+                attention_auto_machine_weight = upscale_config["controlnet_ref"]["attention_auto_machine_weight"],
+                gn_auto_machine_weight = upscale_config["controlnet_ref"]["gn_auto_machine_weight"],
+                style_fidelity = upscale_config["controlnet_ref"]["style_fidelity"],
+                reference_attn= upscale_config["controlnet_ref"]["reference_attn"],
+                reference_adain= upscale_config["controlnet_ref"]["reference_adain"],
+
+            ).images[0]
 
         out_images.append(out_image)
 

@@ -42,7 +42,13 @@ def send_to_device(
         unet_dtype = tenc_dtype = vae_dtype
 
         logger.info(f"-> Selected data types: {unet_dtype=},{tenc_dtype=},{vae_dtype=}")
-        pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+
+        if hasattr(pipeline.controlnet, 'nets'):
+            for i in range(len(pipeline.controlnet.nets)):
+                pipeline.controlnet.nets[i] = pipeline.controlnet.nets[i].to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+        else:
+            pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+
 
     pipeline.unet = pipeline.unet.to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
     pipeline.text_encoder = pipeline.text_encoder.to(device=device, dtype=tenc_dtype)

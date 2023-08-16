@@ -43,16 +43,16 @@
       "control_guidance_end": 1.0
     },
     "controlnet_ip2p": {
-      "enable": false,
+      "enable": true,
       "controlnet_conditioning_scale": 0.5,
       "guess_mode": false,
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0
     },
     "controlnet_ref": {
-      "enable": false,
+      "enable": true,
       "use_frame_as_ref_image": false,
-      "use_1st_frame_as_ref_image": false,
+      "use_1st_frame_as_ref_image": true,
       "ref_image": "ref_image/path_to_your_ref_img.jpg",
       "attention_auto_machine_weight": 1.0,
       "gn_auto_machine_weight": 1.0,
