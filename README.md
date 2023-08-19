@@ -9,14 +9,17 @@ It seems to work surprisingly well!
 ### Example
 - standing -> walking -> spider webs:2.0 -> sitting
 - Left : output of "animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16"
-- Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512"
+- Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -W 512"
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/bb72d69e-8f00-434f-af85-497b0f574cef" muted="false"></video></div>
 <br>
 
-- normal -> smile -> crying+rain -> anger+rain
-<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/2f1de542-7084-417b-9baa-59a55fdd0e1b" muted="false"></video></div>
+- at the beach -> sitting at a table, in a restaurant, (burger on table:1.2) -> (drinking beer:1.2), outdoors, sunny -> (holding a cat:1.2), outdoors, sunny
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/35fcf116-c4fd-4394-b9d0-7cad457afdbc" muted="false"></video></div>
 <br>
 
+-  -> close-up -> close-up face -> close-up face, grin
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/8a608bd2-bddb-4bb7-af13-bcc8fe68a57a" muted="false"></video></div>
+<br>
 
 ### Installation(for windows)
 Same as the original animatediff-cli
@@ -44,7 +47,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "seed": [
     341774366206100         # -1 means random
   ],
-  "scheduler": "ddim",
+  "scheduler": "ddim",      # "ddim","euler","euler_a","k_dpmpp_2m", etc...
   "steps": 40,
   "guidance_scale": 20,     # cfg scale
   "clip_skip": 2,
@@ -125,6 +128,10 @@ animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt
 # See "animatediff civitai2config -h" for details
 animatediff civitai2config PATH_TO_YOUR_A111_LORA_DIR
 ```
+### Recommended setting
+- checkpoint : [mistoonAnime_v20](https://civitai.com/models/24149/mistoonanime) for anime, [xxmix9realistic_v40](https://civitai.com/models/47274) for photoreal
+- scheduler : "k_dpmpp_sde"
+- upscale : Enable controlnet_tile and controlnet_ip2p only. If you can provide a good reference image, controlnet_ref may also be useful.
 
 ### Limitations
 - lora support is limited. Not all formats can be used!!!
