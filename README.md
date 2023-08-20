@@ -128,6 +128,14 @@ animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt
 # See "animatediff civitai2config -h" for details
 animatediff civitai2config PATH_TO_YOUR_A111_LORA_DIR
 ```
+#### Wildcard
+- you can pick wildcard up at [civitai](https://civitai.com/models/23799/freecards). then, put them in /wildcards. 
+- Usage is the same as a1111.(  \_\_WILDCARDFILENAME\_\_ format, 
+ex.  \_\_animal\_\_ for animal.txt. \_\_background-color\_\_ for background-color.txt.)
+```json
+  "prompt_map": {           # __WILDCARDFILENAME__
+    "0":  "__character-posture__, __character-gesture__, __character-emotion__, masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)), __background__",
+```
 ### Recommended setting
 - checkpoint : [mistoonAnime_v20](https://civitai.com/models/24149/mistoonanime) for anime, [xxmix9realistic_v40](https://civitai.com/models/47274) for photoreal
 - scheduler : "k_dpmpp_sde"
