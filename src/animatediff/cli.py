@@ -23,6 +23,7 @@ from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
 from animatediff.utils.util import (path_from_cwd, save_frames, save_imgs,
                                     save_video)
+from animatediff.utils.wild_card import replace_wild_card
 
 cli: typer.Typer = typer.Typer(
     context_settings=dict(help_option_names=["-h", "--help"]),
@@ -290,6 +291,20 @@ def generate(
         pipeline = send_to_device(
             pipeline, device, freeze=True, force_half=force_half_vae, compile=model_config.compile
         )
+
+    # save raw config to output directory
+    save_config_path = save_dir.joinpath("raw_prompt.json")
+    save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+
+    # fix seed
+    for i, s in enumerate(model_config.seed):
+        if s == -1:
+            model_config.seed[i] = torch.seed()
+
+    # wildcard conversion
+    wild_card_dir = get_dir("wildcards")
+    for k in model_config.prompt_map.keys():
+        model_config.prompt_map[k] = replace_wild_card(model_config.prompt_map[k], wild_card_dir)
 
     # save config to output directory
     logger.info("Saving prompt config to output directory")
