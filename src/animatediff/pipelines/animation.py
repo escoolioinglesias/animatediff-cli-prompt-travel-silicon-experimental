@@ -10,14 +10,15 @@ import torch
 from diffusers.configuration_utils import FrozenDict
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin
-from diffusers.models import AutoencoderKL
+from diffusers.models import AutoencoderKL, ControlNetModel
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.schedulers import (DDIMScheduler, DPMSolverMultistepScheduler,
                                   EulerAncestralDiscreteScheduler,
                                   EulerDiscreteScheduler, LMSDiscreteScheduler,
                                   PNDMScheduler)
 from diffusers.utils import (BaseOutput, deprecate, is_accelerate_available,
-                             is_accelerate_version, randn_tensor)
+                             is_accelerate_version, is_compiled_module,
+                             randn_tensor)
 from einops import rearrange
 from packaging import version
 from tqdm.rich import tqdm
@@ -53,6 +54,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         LMSDiscreteScheduler,
         PNDMScheduler,
     ]
+    controlnet_map: Dict[ str , ControlNetModel ]
 
     def __init__(
         self,
@@ -69,6 +71,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             DPMSolverMultistepScheduler,
         ],
         feature_extractor: CLIPImageProcessor,
+        controlnet_map: Dict[ str , ControlNetModel ]=None,
     ):
         super().__init__()
 
@@ -130,6 +133,11 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
+        self.control_image_processor = VaeImageProcessor(
+            vae_scale_factor=self.vae_scale_factor, do_convert_rgb=True, do_normalize=False
+        )
+        self.controlnet_map = controlnet_map
+
 
     def enable_vae_slicing(self):
         r"""
@@ -187,6 +195,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
         if self.safety_checker is not None:
             _, hook = cpu_offload_with_hook(self.safety_checker, device, prev_module_hook=hook)
+
+        # control net hook has be manually offloaded as it alternates with unet
+        cpu_offload_with_hook(self.controlnet, device)
 
         # We'll offload the last model manually.
         self.final_offload_hook = hook
@@ -504,6 +515,36 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     f" {negative_prompt_embeds.shape}."
                 )
 
+    def prepare_image(
+        self,
+        image,
+        width,
+        height,
+        batch_size,
+        num_images_per_prompt,
+        device,
+        dtype,
+        do_classifier_free_guidance=False,
+        guess_mode=False,
+    ):
+        image = self.control_image_processor.preprocess(image, height=height, width=width).to(dtype=torch.float32)
+        image_batch_size = image.shape[0]
+
+        if image_batch_size == 1:
+            repeat_by = batch_size
+        else:
+            # image batch size is the same as prompt batch size
+            repeat_by = num_images_per_prompt
+
+        image = image.repeat_interleave(repeat_by, dim=0)
+
+        image = image.to(device=device, dtype=dtype)
+
+        if do_classifier_free_guidance and not guess_mode:
+            image = torch.cat([image] * 2)
+
+        return image
+
     def prepare_latents(
         self,
         batch_size,
@@ -565,8 +606,11 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         context_schedule: str = "uniform",
         clip_skip: int = 1,
         prompt_map: Dict[int, str] = None,
+        controlnet_type_map: Dict[str, Dict[str,float]] = None,
+        controlnet_image_map: Dict[int, Dict[str,Any]] = None,
         **kwargs,
     ):
+
         # Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
@@ -666,6 +710,85 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
             return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
 
+        # 3.5 Prepare controlnet variables
+
+        # controlnet_image_map
+        # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
+
+        if controlnet_image_map:
+            for key_frame_no in controlnet_image_map:
+                for t, img in controlnet_image_map[key_frame_no].items():
+                    controlnet_image_map[key_frame_no][t] = self.prepare_image(
+                                                        image=img,
+                                                        width=width,
+                                                        height=height,
+                                                        batch_size=1 * 1,
+                                                        num_images_per_prompt=1,
+                                                        device=device,
+                                                        dtype=self.controlnet_map[t].dtype,
+                                                        do_classifier_free_guidance=do_classifier_free_guidance,
+                                                        guess_mode=False,
+                                                    )
+
+        # { "0_type_str" : { "scales" = [0.1, 0.3, 0.5, 1.0, 0.5, 0.3, 0.1], "frames"=[125, 126, 127, 0, 1, 2, 3] }}
+        controlnet_scale_map = {}
+        controlnet_affected_list = [False for i in range(video_length)]
+
+        if controlnet_image_map:
+            for key_frame_no in controlnet_image_map:
+                for type_str in controlnet_image_map[key_frame_no]:
+                    scale_list = controlnet_type_map[type_str]["control_scale_list"]
+                    scale_len = len(scale_list)
+
+                    frames = [ i if 0 <= i < video_length else (i+video_length if 0 > i else i- video_length) for i in range(key_frame_no-scale_len, key_frame_no+scale_len+1)]
+
+                    controlnet_scale_map[str(key_frame_no) + "_" + type_str] = {
+                        "scales" : scale_list[::-1] + [1.0] + scale_list,
+                        "frames" : frames,
+                    }
+
+                    for f in frames:
+                        controlnet_affected_list[f] = True
+
+
+        def controlnet_is_affected( frame_index:int):
+            return controlnet_affected_list[frame_index]
+
+        def get_controlnet_scale(
+                type: str,
+                cur_step: int,
+                step_length: int,
+                ):
+            s = controlnet_type_map[type]["control_guidance_start"]
+            e = controlnet_type_map[type]["control_guidance_end"]
+            keep = 1.0 - float(cur_step / len(timesteps) < s or (cur_step + 1) / step_length > e)
+
+            scale = controlnet_type_map[type]["controlnet_conditioning_scale"]
+
+            return keep * scale
+
+        def get_controlnet_variable(
+                frame_index: int,
+                cur_step: int,
+                step_length: int,
+                ):
+            cont_vars = []
+
+            if not controlnet_image_map:
+                return None
+
+            if frame_index not in controlnet_image_map:
+                return None
+
+            for t, img in controlnet_image_map[frame_index].items():
+
+                cont_vars.append( {
+                    "type" : t,
+                    "image" : img,
+                    "cond_scale" : get_controlnet_scale(t, cur_step, step_length),
+                } )
+
+            return cont_vars
 
         # 4. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=latents_device)
@@ -713,6 +836,102 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     (1, 1, latents.shape[2], 1, 1), device=latents.device, dtype=latents.dtype
                 )
 
+                # { "0_type_str" : (down_samples, mid_sample)  }
+                controlnet_result={}
+
+                def get_controlnet_result(context: List[int] = None):
+                    #logger.info(f"get_controlnet_result called {context=}")
+
+                    hit = False
+                    for n in context:
+                        if controlnet_is_affected(n):
+                            hit=True
+                            break
+                    if hit == False:
+                        return None, None
+
+                    _down_block_res_samples=[]
+
+                    s = list(controlnet_result.values())[0]
+                    for ii in range(len(s[0])):
+                        _down_block_res_samples.append(
+                            torch.zeros(
+                                (s[0][ii].shape[0], s[0][ii].shape[1], len(context) ,*s[0][ii].shape[3:]),
+                                device=device,
+                                dtype=s[0][ii].dtype,
+                                ))
+                    _mid_block_res_samples =  torch.zeros(
+                                    (s[1].shape[0], s[1].shape[1], len(context) ,*s[1].shape[3:]),
+                                    device=device,
+                                    dtype=s[1].dtype,
+                                    )
+
+                    for result in controlnet_result:
+                        val = controlnet_result[result]
+                        loc =  list(set(context) & set(controlnet_scale_map[result]["frames"]))
+                        scales = []
+
+                        for o in loc:
+                            for j, f in enumerate(controlnet_scale_map[result]["frames"]):
+                                if o == f:
+                                    scales.append(controlnet_scale_map[result]["scales"][j])
+                                    break
+                        loc_index=[]
+
+                        for o in loc:
+                            for j, f in enumerate( context ):
+                                if o==f:
+                                    loc_index.append(j)
+                                    break
+
+                        mod = torch.tensor(scales).to(device, dtype=val[1].dtype)
+
+                        add = val[1] * mod[None,None,:,None,None]
+                        _mid_block_res_samples[:, :, loc_index, :, :] = _mid_block_res_samples[:, :, loc_index, :, :] + add
+
+                        for ii in range(len(val[0])):
+                            mod = torch.tensor(scales).to(device, dtype=val[0][ii].dtype)
+                            add = val[0][ii] * mod[None,None,:,None,None]
+                            _down_block_res_samples[ii][:, :, loc_index, :, :] = _down_block_res_samples[ii][:, :, loc_index, :, :] + add
+
+                    return _down_block_res_samples, _mid_block_res_samples
+
+
+                for frame_no in range(latents.shape[2]):
+                    cont_vars = get_controlnet_variable(frame_no, i, len(timesteps))
+                    if not cont_vars:
+                        continue
+
+                    latent_model_input = (
+                        latents[:, :, [frame_no]]
+                        .to(device)
+                        .repeat(2 if do_classifier_free_guidance else 1, 1, 1, 1, 1)
+                    )
+                    control_model_input = self.scheduler.scale_model_input(latent_model_input, t)[:, :, 0]
+                    controlnet_prompt_embeds = get_current_prompt_embeds([frame_no], latents.shape[2])
+
+                    down_samples = None
+                    mid_sample = None
+
+                    for cont_var in cont_vars:
+                        _down_samples, _mid_sample = self.controlnet_map[cont_var["type"]](
+                            control_model_input,
+                            t,
+                            encoder_hidden_states=controlnet_prompt_embeds,
+                            controlnet_cond=cont_var["image"],
+                            conditioning_scale=cont_var["cond_scale"],
+                            guess_mode=False,
+                            return_dict=False,
+                        )
+                        down_samples, mid_sample = _down_samples, _mid_sample
+
+                        for ii in range(len(down_samples)):
+                            down_samples[ii] = rearrange(down_samples[ii], "(b f) c h w -> b c f h w", f=1)
+                        mid_sample = rearrange(mid_sample, "(b f) c h w -> b c f h w", f=1)
+
+                        controlnet_result[str(frame_no) + "_" + cont_var["type"]] = (down_samples, mid_sample)
+
+
                 for context in context_scheduler(
                     i, num_inference_steps, latents.shape[2], context_frames, context_stride, context_overlap
                 ):
@@ -726,12 +945,16 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                     cur_prompt = get_current_prompt_embeds(context, latents.shape[2])
 
+                    down_block_res_samples,mid_block_res_sample = get_controlnet_result(context)
+
                     # predict the noise residual
                     pred = self.unet(
                         latent_model_input.to(self.unet.device, self.unet.dtype),
                         t,
                         encoder_hidden_states=cur_prompt,
                         cross_attention_kwargs=cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
                         return_dict=False,
                     )[0]
 

@@ -70,4 +70,16 @@ def get_resized_images(org_images_path: List[str], us_width: int, us_height: int
 
     return [resize_for_condition_image(img, us_width, us_height) for img in images]
 
+def get_resized_image(org_image_path: str, us_width: int, us_height: int):
+
+    image = Image.open( org_image_path )
+
+    W, H = image.size
+
+    if us_width == -1:
+        us_width = W/H * us_height
+    elif us_height == -1:
+        us_height = H/W * us_width
+
+    return resize_for_condition_image(image, us_width, us_height)
 

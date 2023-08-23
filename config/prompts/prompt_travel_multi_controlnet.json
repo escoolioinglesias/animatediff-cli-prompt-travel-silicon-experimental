@@ -6,7 +6,7 @@
   "seed": [
     341774366206100
   ],
-  "scheduler": "ddim",
+  "scheduler": "k_dpmpp_sde",
   "steps": 40,
   "guidance_scale": 20,
   "clip_skip": 2,
@@ -23,8 +23,46 @@
     "share/Lora/muffet_v2.safetensors" : 1.0,
     "share/Lora/add_detail.safetensors" : 1.0
   },
+  "controlnet_map": {
+    "input_image_dir" : "controlnet_image/test",
+    "controlnet_tile":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_ip2p":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_lineart_anime":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_openpose":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_softedge":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    }
+  },
   "upscale_config": {
-    "scheduler": "ddim",
+    "scheduler": "k_dpmpp_sde",
     "steps": 20,
     "strength": 0.5,
     "guidance_scale": 10,
@@ -50,7 +88,7 @@
       "control_guidance_end": 1.0
     },
     "controlnet_ref": {
-      "enable": true,
+      "enable": false,
       "use_frame_as_ref_image": false,
       "use_1st_frame_as_ref_image": true,
       "ref_image": "ref_image/path_to_your_ref_img.jpg",

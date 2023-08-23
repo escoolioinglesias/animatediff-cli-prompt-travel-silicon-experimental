@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 import torch._dynamo as dynamo
+from diffusers import StableDiffusionPipeline
 from einops._torch_specific import allow_ops_in_compiled_graph
 
 from animatediff.pipelines import AnimationPipeline
@@ -13,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def send_to_device(
-    pipeline: AnimationPipeline,
+    pipeline: StableDiffusionPipeline,
     device: torch.device,
     freeze: bool = True,
     force_half: bool = False,
     compile: bool = False,
-) -> AnimationPipeline:
+) -> StableDiffusionPipeline:
     logger.info(f"Sending pipeline to device \"{device.type}{device.index if device.index else ''}\"")
 
     # Freeze model weights and force-disable training
@@ -48,6 +49,15 @@ def send_to_device(
                 pipeline.controlnet.nets[i] = pipeline.controlnet.nets[i].to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
         else:
             pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+
+    if hasattr(pipeline, 'controlnet_map'):
+        unet_dtype = tenc_dtype = vae_dtype
+
+        logger.info(f"-> Selected data types: {unet_dtype=},{tenc_dtype=},{vae_dtype=}")
+
+        if pipeline.controlnet_map:
+            for c in pipeline.controlnet_map:
+                pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
 
 
     pipeline.unet = pipeline.unet.to(device=device, dtype=unet_dtype, memory_format=model_memory_format)

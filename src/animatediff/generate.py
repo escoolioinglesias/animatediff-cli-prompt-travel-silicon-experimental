@@ -1,11 +1,13 @@
+import glob
 import logging
+import os
 import re
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import torch
-from controlnet_aux import LineartAnimeDetector
+from controlnet_aux import HEDdetector, LineartAnimeDetector, OpenposeDetector
 from diffusers import (AutoencoderKL, ControlNetModel, DiffusionPipeline,
                        StableDiffusionControlNetImg2ImgPipeline,
                        StableDiffusionPipeline)
@@ -23,7 +25,8 @@ from animatediff.settings import InferenceConfig, ModelConfig
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
-from animatediff.utils.util import get_resized_images, save_video
+from animatediff.utils.util import (get_resized_image, get_resized_images,
+                                    save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,9 @@ default_base_path = data_dir.joinpath("models/huggingface/stable-diffusion-v1-5"
 
 re_clean_prompt = re.compile(r"[^\w\-, ]")
 
+lineart_anime_processor = None
+openpose_processor=None
+softedge_processor=None
 
 def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animatediff=True):
     from safetensors.torch import load_file
@@ -46,6 +52,50 @@ def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animated
     print(f"load LoRA network weights")
     lora_network.load_state_dict(sd, False)
     lora_network.merge_to(alpha)
+
+
+def create_controlnet_model(type_str):
+    if type_str == "controlnet_tile":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11f1e_sd15_tile')
+    elif type_str == "controlnet_lineart_anime":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15s2_lineart_anime')
+    elif type_str == "controlnet_ip2p":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11e_sd15_ip2p')
+    elif type_str == "controlnet_openpose":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_openpose')
+    elif type_str == "controlnet_softedge":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_softedge')
+    else:
+        raise ValueError(f"unknown controlnet type {type_str}")
+
+
+
+def get_preprocessor(type_str):
+    global lineart_anime_processor,openpose_processor,softedge_processor
+    if type_str == "controlnet_lineart_anime":
+        if not lineart_anime_processor:
+            lineart_anime_processor = LineartAnimeDetector.from_pretrained("lllyasviel/Annotators")
+        return lineart_anime_processor
+    elif type_str == "controlnet_openpose":
+        if not openpose_processor:
+            openpose_processor = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
+        return openpose_processor
+    elif type_str == "controlnet_softedge":
+        if not softedge_processor:
+            softedge_processor = HEDdetector.from_pretrained("lllyasviel/Annotators")
+        return softedge_processor
+    else:
+        raise ValueError(f"unknown controlnet type {type_str}")
+
+
+def get_preprocessed_img(type_str, img):
+    if type_str in ( "controlnet_tile", "controlnet_ip2p"):
+        return img
+    elif type_str in ( "controlnet_lineart_anime" , "controlnet_openpose" ,"controlnet_softedge"):
+        return get_preprocessor(type_str)(img)
+    else:
+        raise ValueError(f"unknown controlnet type {type_str}")
+
 
 
 def create_pipeline(
@@ -136,6 +186,23 @@ def create_pipeline(
             logger.info(f"alpha = {model_config.lora_map[l]}")
             load_safetensors_lora(text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
 
+    # controlnet
+    controlnet_map={}
+    if model_config.controlnet_map:
+        c_image_dir = data_dir.joinpath( model_config.controlnet_map["input_image_dir"] )
+
+        for c in model_config.controlnet_map:
+            item = model_config.controlnet_map[c]
+            if type(item) is dict:
+                if item["enable"] == True:
+                    img_dir = c_image_dir.joinpath( c )
+                    cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
+                    if len(cond_imgs) > 0:
+                        controlnet_map[c] = create_controlnet_model( c )
+
+    if not controlnet_map:
+        controlnet_map = None
+
     logger.info("Creating AnimationPipeline...")
     pipeline = AnimationPipeline(
         vae=vae,
@@ -144,6 +211,7 @@ def create_pipeline(
         unet=unet,
         scheduler=scheduler,
         feature_extractor=feature_extractor,
+        controlnet_map=controlnet_map,
     )
 
     # Load TI embeddings
@@ -289,8 +357,41 @@ def run_inference(
     clip_skip: int = 1,
     return_dict: bool = False,
     prompt_map: Dict[int, str] = None,
+    controlnet_map: Dict[str, Any] = None,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
+
+    controlnet_type_map={}
+    controlnet_image_map={}
+    # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
+
+    if controlnet_map:
+        c_image_dir = data_dir.joinpath( controlnet_map["input_image_dir"] )
+
+        for c in controlnet_map:
+            item = controlnet_map[c]
+            if type(item) is dict:
+                if item["enable"] == True:
+                    img_dir = c_image_dir.joinpath( c )
+                    cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
+                    if len(cond_imgs) > 0:
+                        controlnet_type_map[c] = {
+                            "controlnet_conditioning_scale" : item["controlnet_conditioning_scale"],
+                            "control_guidance_start" : item["control_guidance_start"],
+                            "control_guidance_end" : item["control_guidance_end"],
+                            "control_scale_list" : item["control_scale_list"],
+                        }
+                    for img_path in cond_imgs:
+                        frame_no = int(Path(img_path).stem)
+                        if frame_no not in controlnet_image_map:
+                            controlnet_image_map[frame_no] = {}
+                        controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) )
+
+
+    if not controlnet_type_map:
+        controlnet_type_map=None
+    if not controlnet_image_map:
+        controlnet_image_map=None
 
     if seed == -1:
         seed = torch.seed()
@@ -312,6 +413,8 @@ def run_inference(
         context_schedule=context_schedule,
         clip_skip=clip_skip,
         prompt_map=prompt_map,
+        controlnet_type_map=controlnet_type_map,
+        controlnet_image_map=controlnet_image_map,
     )
     logger.info("Generation complete, saving...")
 

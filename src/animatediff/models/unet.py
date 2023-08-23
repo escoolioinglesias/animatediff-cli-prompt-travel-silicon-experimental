@@ -10,20 +10,15 @@ import torch.utils.checkpoint
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models import ModelMixin
 from diffusers.models.embeddings import TimestepEmbedding, Timesteps
-from diffusers.utils import SAFETENSORS_WEIGHTS_NAME, WEIGHTS_NAME, BaseOutput, logging
+from diffusers.utils import (SAFETENSORS_WEIGHTS_NAME, WEIGHTS_NAME,
+                             BaseOutput, logging)
 from safetensors.torch import load_file
 from torch import Tensor, nn
 
 from .resnet import InflatedConv3d
-from .unet_blocks import (
-    CrossAttnDownBlock3D,
-    CrossAttnUpBlock3D,
-    DownBlock3D,
-    UNetMidBlock3DCrossAttn,
-    UpBlock3D,
-    get_down_block,
-    get_up_block,
-)
+from .unet_blocks import (CrossAttnDownBlock3D, CrossAttnUpBlock3D,
+                          DownBlock3D, UNetMidBlock3DCrossAttn, UpBlock3D,
+                          get_down_block, get_up_block)
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -314,6 +309,8 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         attention_mask: Optional[Tensor] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
+        down_block_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
+        mid_block_additional_residual: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
     ) -> Union[UNet3DConditionOutput, Tuple]:
@@ -435,6 +432,17 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
 
             down_block_res_samples = down_block_res_samples + res_samples
 
+        if down_block_additional_residuals is not None:
+            new_down_block_res_samples = ()
+
+            for down_block_res_sample, down_block_additional_residual in zip(
+                down_block_res_samples, down_block_additional_residuals
+            ):
+                down_block_res_sample = down_block_res_sample + down_block_additional_residual
+                new_down_block_res_samples = new_down_block_res_samples + (down_block_res_sample,)
+
+            down_block_res_samples = new_down_block_res_samples
+
         # 4. mid
         if self.mid_block is not None:
             sample = self.mid_block(
@@ -444,6 +452,10 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
                 attention_mask=attention_mask,
                 cross_attention_kwargs=cross_attention_kwargs,
             )
+
+
+        if mid_block_additional_residual is not None:
+            sample = sample + mid_block_additional_residual
 
         # up
         for i, upsample_block in enumerate(self.up_blocks):

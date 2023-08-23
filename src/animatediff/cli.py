@@ -378,6 +378,7 @@ def generate(
                 context_stride=stride,
                 clip_skip=model_config.clip_skip,
                 prompt_map=prompt_map,
+                controlnet_map=model_config.controlnet_map,
             )
             outputs.append(output)
             torch.cuda.empty_cache()
