@@ -1,12 +1,19 @@
 # AnimateDiff prompt travel
 
-AnimateDiff with prompt travel
+AnimateDiff with prompt travel + controlnet
 
 I added a experimental feature to animatediff-cli to change the prompt in the middle of the frame.
 
 It seems to work surprisingly well!
 
 ### Example
+- controlnet_openpose + controlnet_softedge
+- input frames for controlnet(0,16,32 frames)
+![t0000](https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/4adac698-75a4-4c6d-bf64-a5723d0e3e77)
+- result
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/50aa9d0d-15b6-4c84-a497-8d020d3bdb7c" muted="false"></video></div>
+<br>
+
 - standing -> walking -> spider webs:2.0 -> sitting
 - Left : output of "animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16"
 - Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -W 512"
@@ -63,6 +70,44 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "lora_map": {             # "PATH_TO_LORA" : STRENGTH format
     "share/Lora/muffet_v2.safetensors" : 1.0,                     # Specify lora as a path relative to /animatediff-cli/data
     "share/Lora/add_detail.safetensors" : 1.0                     # Lora support is limited. Not all formats can be used!!!
+  },
+  "controlnet_map": {       # config for controlnet(for generation)
+    "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)  
+    "controlnet_tile":{    # config for controlnet_tile
+      "enable": true,              # enable/disable (important)
+      "controlnet_conditioning_scale": 1.0,    # control weight (important)
+      "control_guidance_start": 0.0,       # starting control step
+      "control_guidance_end": 1.0,         # ending control step
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]    # list of influences on neighboring frames (important)
+    },                                              # This means that there is an impact of 0.5 on both neighboring frames and 0.4 on the one next to it. Try lengthening, shortening, or changing the values inside.
+    "controlnet_ip2p":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_lineart_anime":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_openpose":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_softedge":{
+      "enable": true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    }
   },
   "upscale_config": {       # config for tile-upscale
     "scheduler": "ddim",
