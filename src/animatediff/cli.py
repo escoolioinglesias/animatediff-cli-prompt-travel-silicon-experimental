@@ -329,13 +329,12 @@ def generate(
     save_config_path = save_dir.joinpath("prompt.json")
     save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
 
-    num_prompts = 1
     num_negatives = len(model_config.n_prompt)
     num_seeds = len(model_config.seed)
-    gen_total = num_prompts * repeats  # total number of generations
+    gen_total = repeats  # total number of generations
 
     logger.info("Initialization complete!")
-    logger.info(f"Generating {gen_total} animations from {num_prompts} prompts")
+    logger.info(f"Generating {gen_total} animations")
     outputs = []
 
     gen_num = 0  # global generation index
@@ -343,12 +342,12 @@ def generate(
     for _ in range(repeats):
         if model_config.prompt_map:
             # get the index of the prompt, negative, and seed
-            idx = gen_num % num_prompts
-            logger.info(f"Running generation {gen_num + 1} of {gen_total} (prompt {idx + 1})")
+            idx = gen_num
+            logger.info(f"Running generation {gen_num + 1} of {gen_total}")
 
             # allow for reusing the same negative prompt(s) and seed(s) for multiple prompts
             n_prompt = model_config.n_prompt[idx % num_negatives]
-            seed = seed = model_config.seed[idx % num_seeds]
+            seed = model_config.seed[idx % num_seeds]
 
             # duplicated in run_inference, but this lets us use it for frame save dirs
             # TODO: Move gif Output out of run_inference...

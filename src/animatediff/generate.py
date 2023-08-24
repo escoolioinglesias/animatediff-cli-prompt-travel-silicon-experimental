@@ -383,9 +383,10 @@ def run_inference(
                         }
                     for img_path in cond_imgs:
                         frame_no = int(Path(img_path).stem)
-                        if frame_no not in controlnet_image_map:
-                            controlnet_image_map[frame_no] = {}
-                        controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) )
+                        if frame_no < duration:
+                            if frame_no not in controlnet_image_map:
+                                controlnet_image_map[frame_no] = {}
+                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) )
 
 
     if not controlnet_type_map:
