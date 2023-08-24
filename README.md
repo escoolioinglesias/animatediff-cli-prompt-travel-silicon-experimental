@@ -52,7 +52,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "motion_module": "models/motion-module/mm_sd_v14.ckpt",         # Specify motion module as a path relative to /animatediff-cli/data
   "compile": false,
   "seed": [
-    341774366206100         # -1 means random
+    341774366206100,-1,-1         # -1 means random. If "--repeats 3" is specified in this setting, The first will be 341774366206100, the second and third will be random.
   ],
   "scheduler": "ddim",      # "ddim","euler","euler_a","k_dpmpp_2m", etc...
   "steps": 40,
