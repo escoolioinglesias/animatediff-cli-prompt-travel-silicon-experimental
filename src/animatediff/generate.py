@@ -88,11 +88,11 @@ def get_preprocessor(type_str):
         raise ValueError(f"unknown controlnet type {type_str}")
 
 
-def get_preprocessed_img(type_str, img):
+def get_preprocessed_img(type_str, img, use_preprocessor):
     if type_str in ( "controlnet_tile", "controlnet_ip2p"):
         return img
     elif type_str in ( "controlnet_lineart_anime" , "controlnet_openpose" ,"controlnet_softedge"):
-        return get_preprocessor(type_str)(img)
+        return get_preprocessor(type_str)(img) if use_preprocessor else img
     else:
         raise ValueError(f"unknown controlnet type {type_str}")
 
@@ -381,12 +381,15 @@ def run_inference(
                             "control_guidance_end" : item["control_guidance_end"],
                             "control_scale_list" : item["control_scale_list"],
                         }
+
+                    use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
+
                     for img_path in cond_imgs:
                         frame_no = int(Path(img_path).stem)
                         if frame_no < duration:
                             if frame_no not in controlnet_image_map:
                                 controlnet_image_map[frame_no] = {}
-                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) )
+                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor)
 
 
     if not controlnet_type_map:
