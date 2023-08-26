@@ -608,6 +608,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         prompt_map: Dict[int, str] = None,
         controlnet_type_map: Dict[str, Dict[str,float]] = None,
         controlnet_image_map: Dict[int, Dict[str,Any]] = None,
+        controlnet_max_samples_on_vram: int = 999,
         **kwargs,
     ):
 
@@ -838,6 +839,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                 # { "0_type_str" : (down_samples, mid_sample)  }
                 controlnet_result={}
+                controlnet_samples_on_vram = 0
 
                 def get_controlnet_result(context: List[int] = None):
                     #logger.info(f"get_controlnet_result called {context=}")
@@ -852,22 +854,25 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                     _down_block_res_samples=[]
 
-                    s = list(controlnet_result.values())[0]
-                    for ii in range(len(s[0])):
+                    first_down = list(controlnet_result.values())[0][0]
+                    first_mid = list(controlnet_result.values())[0][1]
+                    for ii in range(len(first_down)):
                         _down_block_res_samples.append(
                             torch.zeros(
-                                (s[0][ii].shape[0], s[0][ii].shape[1], len(context) ,*s[0][ii].shape[3:]),
+                                (first_down[ii].shape[0], first_down[ii].shape[1], len(context) ,*first_down[ii].shape[3:]),
                                 device=device,
-                                dtype=s[0][ii].dtype,
+                                dtype=first_down[ii].dtype,
                                 ))
                     _mid_block_res_samples =  torch.zeros(
-                                    (s[1].shape[0], s[1].shape[1], len(context) ,*s[1].shape[3:]),
+                                    (first_mid.shape[0], first_mid.shape[1], len(context) ,*first_mid.shape[3:]),
                                     device=device,
-                                    dtype=s[1].dtype,
+                                    dtype=first_mid.dtype,
                                     )
 
                     for result in controlnet_result:
                         val = controlnet_result[result]
+                        cur_down = [ v.to(device = device, dtype=first_down[0].dtype) for v in val[0] ]
+                        cur_mid =val[1].to(device = device, dtype=first_mid.dtype)
                         loc =  list(set(context) & set(controlnet_scale_map[result]["frames"]))
                         scales = []
 
@@ -884,14 +889,13 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                                     loc_index.append(j)
                                     break
 
-                        mod = torch.tensor(scales).to(device, dtype=val[1].dtype)
+                        mod = torch.tensor(scales).to(device, dtype=cur_mid.dtype)
 
-                        add = val[1] * mod[None,None,:,None,None]
+                        add = cur_mid * mod[None,None,:,None,None]
                         _mid_block_res_samples[:, :, loc_index, :, :] = _mid_block_res_samples[:, :, loc_index, :, :] + add
 
-                        for ii in range(len(val[0])):
-                            mod = torch.tensor(scales).to(device, dtype=val[0][ii].dtype)
-                            add = val[0][ii] * mod[None,None,:,None,None]
+                        for ii in range(len(cur_down)):
+                            add = cur_down[ii] * mod[None,None,:,None,None]
                             _down_block_res_samples[ii][:, :, loc_index, :, :] = _down_block_res_samples[ii][:, :, loc_index, :, :] + add
 
                     return _down_block_res_samples, _mid_block_res_samples
@@ -910,11 +914,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     control_model_input = self.scheduler.scale_model_input(latent_model_input, t)[:, :, 0]
                     controlnet_prompt_embeds = get_current_prompt_embeds([frame_no], latents.shape[2])
 
-                    down_samples = None
-                    mid_sample = None
-
                     for cont_var in cont_vars:
-                        _down_samples, _mid_sample = self.controlnet_map[cont_var["type"]](
+                        down_samples, mid_sample = self.controlnet_map[cont_var["type"]](
                             control_model_input,
                             t,
                             encoder_hidden_states=controlnet_prompt_embeds,
@@ -923,11 +924,16 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             guess_mode=False,
                             return_dict=False,
                         )
-                        down_samples, mid_sample = _down_samples, _mid_sample
 
                         for ii in range(len(down_samples)):
                             down_samples[ii] = rearrange(down_samples[ii], "(b f) c h w -> b c f h w", f=1)
                         mid_sample = rearrange(mid_sample, "(b f) c h w -> b c f h w", f=1)
+
+                        if controlnet_max_samples_on_vram < controlnet_samples_on_vram:
+                            down_samples = [ v.to(device = torch.device("cpu")) for v in down_samples ]
+                            mid_sample = mid_sample.to(device = torch.device("cpu"))
+                        else:
+                            controlnet_samples_on_vram += 1
 
                         controlnet_result[str(frame_no) + "_" + cont_var["type"]] = (down_samples, mid_sample)
 

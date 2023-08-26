@@ -25,6 +25,9 @@
   },
   "controlnet_map": {
     "input_image_dir" : "controlnet_image/test",
+    "max_samples_on_vram": 999,
+    "save_detectmap": true,
+    
     "controlnet_tile":{
       "enable": true,
       "use_preprocessor":true,
@@ -58,6 +61,78 @@
       "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
     },
     "controlnet_softedge":{
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_shuffle": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_depth": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_canny": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_inpaint": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_lineart": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_mlsd": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_normalbae": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_scribble": {
+      "enable": true,
+      "use_preprocessor":true,
+      "controlnet_conditioning_scale": 1.0,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
+    },
+    "controlnet_seg": {
       "enable": true,
       "use_preprocessor":true,
       "controlnet_conditioning_scale": 1.0,

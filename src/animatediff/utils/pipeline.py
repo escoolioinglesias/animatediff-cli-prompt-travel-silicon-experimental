@@ -51,13 +51,9 @@ def send_to_device(
             pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
 
     if hasattr(pipeline, 'controlnet_map'):
-        unet_dtype = tenc_dtype = vae_dtype
-
-        logger.info(f"-> Selected data types: {unet_dtype=},{tenc_dtype=},{vae_dtype=}")
-
         if pipeline.controlnet_map:
             for c in pipeline.controlnet_map:
-                pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+                pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
 
 
     pipeline.unet = pipeline.unet.to(device=device, dtype=unet_dtype, memory_format=model_memory_format)

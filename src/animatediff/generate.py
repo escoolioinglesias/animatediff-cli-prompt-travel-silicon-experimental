@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import torch
-from controlnet_aux import HEDdetector, LineartAnimeDetector, OpenposeDetector
+from controlnet_aux import LineartAnimeDetector, SamDetector
+from controlnet_aux.processor import Processor as ControlnetPreProcessor
 from diffusers import (AutoencoderKL, ControlNetModel, DiffusionPipeline,
                        StableDiffusionControlNetImg2ImgPipeline,
                        StableDiffusionPipeline)
@@ -35,9 +36,7 @@ default_base_path = data_dir.joinpath("models/huggingface/stable-diffusion-v1-5"
 
 re_clean_prompt = re.compile(r"[^\w\-, ]")
 
-lineart_anime_processor = None
-openpose_processor=None
-softedge_processor=None
+controlnet_preprocessor = {}
 
 def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animatediff=True):
     from safetensors.torch import load_file
@@ -65,36 +64,63 @@ def create_controlnet_model(type_str):
         return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_openpose')
     elif type_str == "controlnet_softedge":
         return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_softedge')
+    elif type_str == "controlnet_shuffle":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11e_sd15_shuffle')
+    elif type_str == "controlnet_depth":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11f1p_sd15_depth')
+    elif type_str == "controlnet_canny":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_canny')
+    elif type_str == "controlnet_inpaint":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_inpaint')
+    elif type_str == "controlnet_lineart":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_lineart')
+    elif type_str == "controlnet_mlsd":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_mlsd')
+    elif type_str == "controlnet_normalbae":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_normalbae')
+    elif type_str == "controlnet_scribble":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_scribble')
+    elif type_str == "controlnet_seg":
+        return ControlNetModel.from_pretrained('lllyasviel/control_v11p_sd15_seg')
     else:
         raise ValueError(f"unknown controlnet type {type_str}")
-
-
 
 def get_preprocessor(type_str):
-    global lineart_anime_processor,openpose_processor,softedge_processor
-    if type_str == "controlnet_lineart_anime":
-        if not lineart_anime_processor:
-            lineart_anime_processor = LineartAnimeDetector.from_pretrained("lllyasviel/Annotators")
-        return lineart_anime_processor
-    elif type_str == "controlnet_openpose":
-        if not openpose_processor:
-            openpose_processor = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
-        return openpose_processor
-    elif type_str == "controlnet_softedge":
-        if not softedge_processor:
-            softedge_processor = HEDdetector.from_pretrained("lllyasviel/Annotators")
-        return softedge_processor
-    else:
-        raise ValueError(f"unknown controlnet type {type_str}")
+    if type_str not in controlnet_preprocessor:
+        if type_str == "controlnet_lineart_anime":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_anime")
+        elif type_str == "controlnet_openpose":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("openpose_full")
+        elif type_str == "controlnet_softedge":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("softedge_hedsafe")
+        elif type_str == "controlnet_shuffle":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("shuffle")
+        elif type_str == "controlnet_depth":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("depth_midas")
+        elif type_str == "controlnet_canny":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("canny")
+        elif type_str == "controlnet_lineart":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_realistic")
+        elif type_str == "controlnet_mlsd":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("mlsd")
+        elif type_str == "controlnet_normalbae":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("normal_bae")
+        elif type_str == "controlnet_scribble":
+            controlnet_preprocessor[type_str] = ControlnetPreProcessor("scribble_pidsafe")
+        elif type_str == "controlnet_seg":
+            controlnet_preprocessor[type_str] = SamDetector.from_pretrained("ybelkada/segment-anything", subfolder="checkpoints")
+        else:
+            raise ValueError(f"unknown controlnet type {type_str}")
+
+    return controlnet_preprocessor[type_str]
+
 
 
 def get_preprocessed_img(type_str, img, use_preprocessor):
-    if type_str in ( "controlnet_tile", "controlnet_ip2p"):
+    if type_str in ( "controlnet_tile", "controlnet_ip2p", "controlnet_inpaint"):
         return img
-    elif type_str in ( "controlnet_lineart_anime" , "controlnet_openpose" ,"controlnet_softedge"):
-        return get_preprocessor(type_str)(img) if use_preprocessor else img
     else:
-        raise ValueError(f"unknown controlnet type {type_str}")
+        return get_preprocessor(type_str)(img) if use_preprocessor else img
 
 
 
@@ -367,9 +393,13 @@ def run_inference(
 
     if controlnet_map:
         c_image_dir = data_dir.joinpath( controlnet_map["input_image_dir"] )
+        save_detectmap = controlnet_map["save_detectmap"] if "save_detectmap" in controlnet_map else True
 
         for c in controlnet_map:
             item = controlnet_map[c]
+
+            processed = False
+
             if type(item) is dict:
                 if item["enable"] == True:
                     img_dir = c_image_dir.joinpath( c )
@@ -382,15 +412,23 @@ def run_inference(
                             "control_scale_list" : item["control_scale_list"],
                         }
 
-                    use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
+                        use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
 
-                    for img_path in cond_imgs:
-                        frame_no = int(Path(img_path).stem)
-                        if frame_no < duration:
-                            if frame_no not in controlnet_image_map:
-                                controlnet_image_map[frame_no] = {}
-                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor)
+                        for img_path in tqdm(cond_imgs, desc=f"Preprocessing images ({c})"):
+                            frame_no = int(Path(img_path).stem)
+                            if frame_no < duration:
+                                if frame_no not in controlnet_image_map:
+                                    controlnet_image_map[frame_no] = {}
+                                controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor)
+                                processed = True
 
+            if save_detectmap and processed:
+                det_dir = out_dir.joinpath(f"{idx:02d}_detectmap/{c}")
+                det_dir.mkdir(parents=True, exist_ok=True)
+                for frame_no in controlnet_image_map:
+                    save_path = det_dir.joinpath(f"{frame_no:04d}.png")
+                    if c in controlnet_image_map[frame_no]:
+                        controlnet_image_map[frame_no][c].save(save_path)
 
     if not controlnet_type_map:
         controlnet_type_map=None
@@ -419,6 +457,7 @@ def run_inference(
         prompt_map=prompt_map,
         controlnet_type_map=controlnet_type_map,
         controlnet_image_map=controlnet_image_map,
+        controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999
     )
     logger.info("Generation complete, saving...")
 
