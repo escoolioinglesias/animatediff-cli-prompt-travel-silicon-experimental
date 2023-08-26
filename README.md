@@ -72,7 +72,9 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "share/Lora/add_detail.safetensors" : 1.0                     # Lora support is limited. Not all formats can be used!!!
   },
   "controlnet_map": {       # config for controlnet(for generation)
-    "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)  
+    "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)
+    "max_samples_on_vram" : 999,    # If you specify a large number of images for controlnet and vram will not be enough, reduce this value. 0 means that everything should be placed in cpu.
+    "save_detectmap" : true,        # save preprocessed image or not
     "controlnet_tile":{    # config for controlnet_tile
       "enable": true,              # enable/disable (important)
       "use_preprocessor":true,      # Whether to use a preprocessor for each controlnet type
