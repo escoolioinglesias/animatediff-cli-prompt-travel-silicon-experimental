@@ -75,6 +75,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)  
     "controlnet_tile":{    # config for controlnet_tile
       "enable": true,              # enable/disable (important)
+      "use_preprocessor":true,      # Whether to use a preprocessor for each controlnet type
       "controlnet_conditioning_scale": 1.0,    # control weight (important)
       "control_guidance_start": 0.0,       # starting control step
       "control_guidance_end": 1.0,         # ending control step
@@ -82,6 +83,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     },                                              # This means that there is an impact of 0.5 on both neighboring frames and 0.4 on the one next to it. Try lengthening, shortening, or changing the values inside.
     "controlnet_ip2p":{
       "enable": true,
+      "use_preprocessor":true,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0,
@@ -89,6 +91,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     },
     "controlnet_lineart_anime":{
       "enable": true,
+      "use_preprocessor":true,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0,
@@ -96,6 +99,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     },
     "controlnet_openpose":{
       "enable": true,
+      "use_preprocessor":true,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0,
@@ -103,6 +107,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     },
     "controlnet_softedge":{
       "enable": true,
+      "use_preprocessor":true,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0,
