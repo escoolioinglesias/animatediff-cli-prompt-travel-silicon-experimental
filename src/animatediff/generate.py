@@ -6,14 +6,20 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
+import numpy as np
 import torch
-from controlnet_aux import LineartAnimeDetector, SamDetector
+from controlnet_aux import LineartAnimeDetector
 from controlnet_aux.processor import Processor as ControlnetPreProcessor
+from controlnet_aux.util import HWC3, ade_palette
+from controlnet_aux.util import resize_image as aux_resize_image
 from diffusers import (AutoencoderKL, ControlNetModel, DiffusionPipeline,
                        StableDiffusionControlNetImg2ImgPipeline,
                        StableDiffusionPipeline)
+from PIL import Image
 from tqdm.rich import tqdm
-from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
+from transformers import (AutoImageProcessor, CLIPImageProcessor,
+                          CLIPTextModel, CLIPTokenizer,
+                          UperNetForSemanticSegmentation)
 
 from animatediff import get_dir
 from animatediff.models.clip import CLIPSkipTextModel
@@ -53,6 +59,46 @@ def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animated
     lora_network.merge_to(alpha)
 
 
+
+
+class SegPreProcessor:
+
+    def __init__(self, device="cuda"):
+        self.image_processor = AutoImageProcessor.from_pretrained("openmmlab/upernet-convnext-small")
+        self.image_segmentor = UperNetForSemanticSegmentation.from_pretrained("openmmlab/upernet-convnext-small")
+        self.image_segmentor = self.image_segmentor.to(device)
+        self.device = device
+
+    def __call__(self, input_image, detect_resolution=512, image_resolution=512, output_type="pil", **kwargs):
+
+        input_array = np.array(input_image, dtype=np.uint8)
+        input_array = HWC3(input_array)
+        input_array = aux_resize_image(input_array, detect_resolution)
+
+        pixel_values = self.image_processor(input_array, return_tensors="pt").pixel_values
+
+        with torch.no_grad():
+            outputs = self.image_segmentor(pixel_values.to(self.device))
+
+        outputs.loss = outputs.loss.to("cpu") if outputs.loss is not None else outputs.loss
+        outputs.logits = outputs.logits.to("cpu") if outputs.logits is not None else outputs.logits
+        outputs.hidden_states = outputs.hidden_states.to("cpu") if outputs.hidden_states is not None else outputs.hidden_states
+        outputs.attentions = outputs.attentions.to("cpu") if outputs.attentions is not None else outputs.attentions
+
+        seg = self.image_processor.post_process_semantic_segmentation(outputs, target_sizes=[input_image.size[::-1]])[0]
+        color_seg = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8) # height, width, 3
+
+        for label, color in enumerate(ade_palette()):
+            color_seg[seg == label, :] = color
+
+        color_seg = color_seg.astype(np.uint8)
+        color_seg = aux_resize_image(color_seg, image_resolution)
+        color_seg = Image.fromarray(color_seg)
+
+        return color_seg
+
+
+
 def create_controlnet_model(type_str):
     if type_str == "controlnet_tile":
         return ControlNetModel.from_pretrained('lllyasviel/control_v11f1e_sd15_tile')
@@ -85,7 +131,7 @@ def create_controlnet_model(type_str):
     else:
         raise ValueError(f"unknown controlnet type {type_str}")
 
-def get_preprocessor(type_str):
+def get_preprocessor(type_str, device):
     if type_str not in controlnet_preprocessor:
         if type_str == "controlnet_lineart_anime":
             controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_anime")
@@ -108,19 +154,22 @@ def get_preprocessor(type_str):
         elif type_str == "controlnet_scribble":
             controlnet_preprocessor[type_str] = ControlnetPreProcessor("scribble_pidsafe")
         elif type_str == "controlnet_seg":
-            controlnet_preprocessor[type_str] = SamDetector.from_pretrained("ybelkada/segment-anything", subfolder="checkpoints")
+            controlnet_preprocessor[type_str] = SegPreProcessor(device)
         else:
             raise ValueError(f"unknown controlnet type {type_str}")
 
     return controlnet_preprocessor[type_str]
 
+def clear_controlnet_preprocessor():
+    for t in controlnet_preprocessor:
+        controlnet_preprocessor[t] = None
 
 
-def get_preprocessed_img(type_str, img, use_preprocessor):
+def get_preprocessed_img(type_str, img, use_preprocessor, device_str):
     if type_str in ( "controlnet_tile", "controlnet_ip2p", "controlnet_inpaint"):
         return img
     else:
-        return get_preprocessor(type_str)(img) if use_preprocessor else img
+        return get_preprocessor(type_str, device_str)(img) if use_preprocessor else img
 
 
 
@@ -420,7 +469,7 @@ def run_inference(
                             if frame_no < duration:
                                 if frame_no not in controlnet_image_map:
                                     controlnet_image_map[frame_no] = {}
-                                controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor)
+                                controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor, pipeline.device)
                                 processed = True
 
             if save_detectmap and processed:
@@ -430,6 +479,8 @@ def run_inference(
                     save_path = det_dir.joinpath(f"{frame_no:04d}.png")
                     if c in controlnet_image_map[frame_no]:
                         controlnet_image_map[frame_no][c].save(save_path)
+
+    clear_controlnet_preprocessor()
 
     if not controlnet_type_map:
         controlnet_type_map=None
