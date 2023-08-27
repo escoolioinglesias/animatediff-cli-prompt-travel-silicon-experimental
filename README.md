@@ -197,7 +197,8 @@ ex.  \_\_animal\_\_ for animal.txt. \_\_background-color\_\_ for background-colo
 - checkpoint : [mistoonAnime_v20](https://civitai.com/models/24149/mistoonanime) for anime, [xxmix9realistic_v40](https://civitai.com/models/47274) for photoreal
 - scheduler : "k_dpmpp_sde"
 - upscale : Enable controlnet_tile and controlnet_ip2p only. If you can provide a good reference image, controlnet_ref may also be useful.
-
+- max_samples_on_vram : Set to 0 if vram is insufficient when using controlnet
+ 
 ### Limitations
 - lora support is limited. Not all formats can be used!!!
 - It is not possible to specify lora in the prompt.
