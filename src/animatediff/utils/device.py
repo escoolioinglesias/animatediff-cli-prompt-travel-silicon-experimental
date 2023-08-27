@@ -99,6 +99,8 @@ def get_memory_format(device: Union[str, torch.device]) -> torch.memory_format:
         # Volta and newer seem to like channels_last. This will probably bite me on TU11x cards.
         if device_info.major >= 7:
             ret = torch.channels_last
+        else:
+            ret = torch.contiguous_format
     elif device.type == "xpu":
         # Intel ARC GPUs/XPUs like channels_last
         ret = torch.channels_last
@@ -107,3 +109,4 @@ def get_memory_format(device: Union[str, torch.device]) -> torch.memory_format:
         ret = torch.contiguous_format
     if ret == torch.channels_last:
         logger.info("Using channels_last memory format for UNet and VAE")
+    return ret
