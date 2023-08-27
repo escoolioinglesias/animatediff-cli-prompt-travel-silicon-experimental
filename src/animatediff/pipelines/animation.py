@@ -787,6 +787,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     "type" : t,
                     "image" : img,
                     "cond_scale" : get_controlnet_scale(t, cur_step, step_length),
+                    "guess_mode" : controlnet_type_map[t]["guess_mode"]
                 } )
 
             return cont_vars
@@ -921,7 +922,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             encoder_hidden_states=controlnet_prompt_embeds,
                             controlnet_cond=cont_var["image"],
                             conditioning_scale=cont_var["cond_scale"],
-                            guess_mode=False,
+                            guess_mode=cont_var["guess_mode"],
                             return_dict=False,
                         )
 

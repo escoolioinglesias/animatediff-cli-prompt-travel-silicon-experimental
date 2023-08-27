@@ -410,6 +410,7 @@ def run_inference(
                             "control_guidance_start" : item["control_guidance_start"],
                             "control_guidance_end" : item["control_guidance_end"],
                             "control_scale_list" : item["control_scale_list"],
+                            "guess_mode" : item["guess_mode"] if "guess_mode" in item else False,
                         }
 
                         use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
