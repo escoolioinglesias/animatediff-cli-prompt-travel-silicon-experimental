@@ -161,8 +161,10 @@ def get_preprocessor(type_str, device):
     return controlnet_preprocessor[type_str]
 
 def clear_controlnet_preprocessor():
+    global controlnet_preprocessor
     for t in controlnet_preprocessor:
         controlnet_preprocessor[t] = None
+    controlnet_preprocessor={}
 
 
 def get_preprocessed_img(type_str, img, use_preprocessor, device_str):
