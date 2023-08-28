@@ -63,11 +63,9 @@ def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animated
 
 class SegPreProcessor:
 
-    def __init__(self, device="cuda"):
+    def __init__(self):
         self.image_processor = AutoImageProcessor.from_pretrained("openmmlab/upernet-convnext-small")
-        self.image_segmentor = UperNetForSemanticSegmentation.from_pretrained("openmmlab/upernet-convnext-small")
-        self.image_segmentor = self.image_segmentor.to(device)
-        self.device = device
+        self.processor = UperNetForSemanticSegmentation.from_pretrained("openmmlab/upernet-convnext-small")
 
     def __call__(self, input_image, detect_resolution=512, image_resolution=512, output_type="pil", **kwargs):
 
@@ -78,7 +76,7 @@ class SegPreProcessor:
         pixel_values = self.image_processor(input_array, return_tensors="pt").pixel_values
 
         with torch.no_grad():
-            outputs = self.image_segmentor(pixel_values.to(self.device))
+            outputs = self.processor(pixel_values.to(self.processor.device))
 
         outputs.loss = outputs.loss.to("cpu") if outputs.loss is not None else outputs.loss
         outputs.logits = outputs.logits.to("cpu") if outputs.logits is not None else outputs.logits
@@ -131,7 +129,7 @@ def create_controlnet_model(type_str):
     else:
         raise ValueError(f"unknown controlnet type {type_str}")
 
-def get_preprocessor(type_str, device):
+def get_preprocessor(type_str, device_str):
     if type_str not in controlnet_preprocessor:
         if type_str == "controlnet_lineart_anime":
             controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_anime")
@@ -154,17 +152,27 @@ def get_preprocessor(type_str, device):
         elif type_str == "controlnet_scribble":
             controlnet_preprocessor[type_str] = ControlnetPreProcessor("scribble_pidsafe")
         elif type_str == "controlnet_seg":
-            controlnet_preprocessor[type_str] = SegPreProcessor(device)
+            controlnet_preprocessor[type_str] = SegPreProcessor()
         else:
             raise ValueError(f"unknown controlnet type {type_str}")
 
+        if hasattr(controlnet_preprocessor[type_str], "processor"):
+            if hasattr(controlnet_preprocessor[type_str].processor, "to"):
+                if device_str:
+                    controlnet_preprocessor[type_str].processor.to(device_str)
+
     return controlnet_preprocessor[type_str]
 
-def clear_controlnet_preprocessor():
+def clear_controlnet_preprocessor(type_str = None):
     global controlnet_preprocessor
-    for t in controlnet_preprocessor:
-        controlnet_preprocessor[t] = None
-    controlnet_preprocessor={}
+    if type_str == None:
+        for t in controlnet_preprocessor:
+            controlnet_preprocessor[t] = None
+        controlnet_preprocessor={}
+        torch.cuda.empty_cache()
+    else:
+        controlnet_preprocessor[type_str] = None
+        torch.cuda.empty_cache()
 
 
 def get_preprocessed_img(type_str, img, use_preprocessor, device_str):
@@ -275,6 +283,7 @@ def create_pipeline(
                     img_dir = c_image_dir.joinpath( c )
                     cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
                     if len(cond_imgs) > 0:
+                        logger.info(f"loading {c=} model")
                         controlnet_map[c] = create_controlnet_model( c )
 
     if not controlnet_map:
@@ -415,6 +424,77 @@ def seed_everything(seed):
     np.random.seed(seed % (2**32))
     random.seed(seed)
 
+def controlnet_preprocess(
+        controlnet_map: Dict[str, Any] = None,
+        width: int = 512,
+        height: int = 512,
+        duration: int = 16,
+        out_dir: PathLike = ...,
+        device_str:str=None,
+        ):
+
+    if not controlnet_map:
+        return None, None
+
+    out_dir = Path(out_dir)  # ensure out_dir is a Path
+
+    # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
+    controlnet_image_map={}
+
+    controlnet_type_map={}
+
+    c_image_dir = data_dir.joinpath( controlnet_map["input_image_dir"] )
+    save_detectmap = controlnet_map["save_detectmap"] if "save_detectmap" in controlnet_map else True
+
+    preprocess_on_gpu = controlnet_map["preprocess_on_gpu"] if "preprocess_on_gpu" in controlnet_map else True
+    device_str = device_str if preprocess_on_gpu else None
+
+    for c in controlnet_map:
+        item = controlnet_map[c]
+
+        processed = False
+
+        if type(item) is dict:
+            if item["enable"] == True:
+                img_dir = c_image_dir.joinpath( c )
+                cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
+                if len(cond_imgs) > 0:
+
+                    controlnet_type_map[c] = {
+                        "controlnet_conditioning_scale" : item["controlnet_conditioning_scale"],
+                        "control_guidance_start" : item["control_guidance_start"],
+                        "control_guidance_end" : item["control_guidance_end"],
+                        "control_scale_list" : item["control_scale_list"],
+                        "guess_mode" : item["guess_mode"] if "guess_mode" in item else False,
+                    }
+
+                    use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
+
+                    for img_path in tqdm(cond_imgs, desc=f"Preprocessing images ({c})"):
+                        frame_no = int(Path(img_path).stem)
+                        if frame_no < duration:
+                            if frame_no not in controlnet_image_map:
+                                controlnet_image_map[frame_no] = {}
+                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor, device_str)
+                            processed = True
+
+        if save_detectmap and processed:
+            det_dir = out_dir.joinpath(f"{0:02d}_detectmap/{c}")
+            det_dir.mkdir(parents=True, exist_ok=True)
+            for frame_no in controlnet_image_map:
+                save_path = det_dir.joinpath(f"{frame_no:04d}.png")
+                if c in controlnet_image_map[frame_no]:
+                    controlnet_image_map[frame_no][c].save(save_path)
+
+        clear_controlnet_preprocessor(c)
+
+    clear_controlnet_preprocessor()
+
+    return controlnet_image_map, controlnet_type_map
+
+
+
+
 def run_inference(
     pipeline: AnimationPipeline,
     prompt: str = ...,
@@ -435,60 +515,17 @@ def run_inference(
     return_dict: bool = False,
     prompt_map: Dict[int, str] = None,
     controlnet_map: Dict[str, Any] = None,
+    controlnet_image_map: Dict[str,Any] = None,
+    controlnet_type_map: Dict[str,Any] = None,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
-    controlnet_type_map={}
-    controlnet_image_map={}
-    # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
-
-    if controlnet_map:
-        c_image_dir = data_dir.joinpath( controlnet_map["input_image_dir"] )
-        save_detectmap = controlnet_map["save_detectmap"] if "save_detectmap" in controlnet_map else True
-
-        for c in controlnet_map:
-            item = controlnet_map[c]
-
-            processed = False
-
-            if type(item) is dict:
-                if item["enable"] == True:
-                    img_dir = c_image_dir.joinpath( c )
-                    cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
-                    if len(cond_imgs) > 0:
-                        controlnet_type_map[c] = {
-                            "controlnet_conditioning_scale" : item["controlnet_conditioning_scale"],
-                            "control_guidance_start" : item["control_guidance_start"],
-                            "control_guidance_end" : item["control_guidance_end"],
-                            "control_scale_list" : item["control_scale_list"],
-                            "guess_mode" : item["guess_mode"] if "guess_mode" in item else False,
-                        }
-
-                        use_preprocessor = item["use_preprocessor"] if "use_preprocessor" in item else True
-
-                        for img_path in tqdm(cond_imgs, desc=f"Preprocessing images ({c})"):
-                            frame_no = int(Path(img_path).stem)
-                            if frame_no < duration:
-                                if frame_no not in controlnet_image_map:
-                                    controlnet_image_map[frame_no] = {}
-                                controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor, pipeline.device)
-                                processed = True
-
-            if save_detectmap and processed:
-                det_dir = out_dir.joinpath(f"{idx:02d}_detectmap/{c}")
-                det_dir.mkdir(parents=True, exist_ok=True)
-                for frame_no in controlnet_image_map:
-                    save_path = det_dir.joinpath(f"{frame_no:04d}.png")
-                    if c in controlnet_image_map[frame_no]:
-                        controlnet_image_map[frame_no][c].save(save_path)
-
-    clear_controlnet_preprocessor()
-
+    '''
     if not controlnet_type_map:
         controlnet_type_map=None
     if not controlnet_image_map:
         controlnet_image_map=None
-
+    '''
     if seed == -1:
         seed = torch.seed()
 

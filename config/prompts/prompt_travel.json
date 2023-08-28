@@ -27,6 +27,7 @@
     "input_image_dir" : "controlnet_image/test",
     "max_samples_on_vram": 999,
     "save_detectmap": true,
+    "preprocess_on_gpu": true,
     
     "controlnet_tile":{
       "enable": true,

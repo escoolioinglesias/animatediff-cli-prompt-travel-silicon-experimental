@@ -611,6 +611,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_max_samples_on_vram: int = 999,
         **kwargs,
     ):
+        controlnet_image_map_org = controlnet_image_map
 
         # Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
@@ -715,10 +716,13 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
         # controlnet_image_map
         # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
+        controlnet_image_map= None
 
-        if controlnet_image_map:
-            for key_frame_no in controlnet_image_map:
-                for t, img in controlnet_image_map[key_frame_no].items():
+        if controlnet_image_map_org:
+            controlnet_image_map= {}
+            for key_frame_no in controlnet_image_map_org:
+                controlnet_image_map[key_frame_no]={}
+                for t, img in controlnet_image_map_org[key_frame_no].items():
                     controlnet_image_map[key_frame_no][t] = self.prepare_image(
                                                         image=img,
                                                         width=width,
