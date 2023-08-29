@@ -73,7 +73,8 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   },
   "controlnet_map": {       # config for controlnet(for generation)
     "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)
-    "max_samples_on_vram" : 999,    # If you specify a large number of images for controlnet and vram will not be enough, reduce this value. 0 means that everything should be placed in cpu.
+    "max_samples_on_vram" : 200,    # If you specify a large number of images for controlnet and vram will not be enough, reduce this value. 0 means that everything should be placed in cpu.
+    "max_models_on_vram" : 3,       # Number of controlnet models to be placed in vram
     "save_detectmap" : true,        # save preprocessed image or not
     "preprocess_on_gpu": true,      # run preprocess on gpu or not (It probably does not affect vram usage at peak, so it should always set true.)
 
