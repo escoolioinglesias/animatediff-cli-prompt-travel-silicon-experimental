@@ -1,6 +1,7 @@
 # Adapted from https://github.com/showlab/Tune-A-Video/blob/main/tuneavideo/pipelines/pipeline_tuneavideo.py
 
 import inspect
+import itertools
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -29,6 +30,7 @@ from animatediff.models.unet import UNet3DConditionModel
 from animatediff.pipelines.context import (get_context_scheduler,
                                            get_total_steps)
 from animatediff.utils.model import nop_train
+from animatediff.utils.pipeline import get_memory_format
 
 logger = logging.getLogger(__name__)
 
@@ -609,9 +611,12 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_type_map: Dict[str, Dict[str,float]] = None,
         controlnet_image_map: Dict[int, Dict[str,Any]] = None,
         controlnet_max_samples_on_vram: int = 999,
+        controlnet_max_models_on_vram: int=99,
         **kwargs,
     ):
         controlnet_image_map_org = controlnet_image_map
+
+        controlnet_max_models_on_vram = max(controlnet_max_models_on_vram,1)
 
         # Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
@@ -714,16 +719,25 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
         # 3.5 Prepare controlnet variables
 
+        if self.controlnet_map:
+            if controlnet_max_models_on_vram < len(self.controlnet_map):
+                for _, type_str in zip( range(controlnet_max_models_on_vram-1) ,self.controlnet_map):
+                    self.controlnet_map[type_str].to(device=device)
+            else:
+                for type_str in self.controlnet_map:
+                    self.controlnet_map[type_str].to(device=device)
+
+
         # controlnet_image_map
         # { 0 : { "type_str" : IMAGE, "type_str2" : IMAGE }  }
+        # { "type_str" : { 0 : IMAGE, 15 : IMAGE }  }
         controlnet_image_map= None
 
         if controlnet_image_map_org:
-            controlnet_image_map= {}
+            controlnet_image_map= {key: {} for key in controlnet_type_map}
             for key_frame_no in controlnet_image_map_org:
-                controlnet_image_map[key_frame_no]={}
                 for t, img in controlnet_image_map_org[key_frame_no].items():
-                    controlnet_image_map[key_frame_no][t] = self.prepare_image(
+                    controlnet_image_map[t][key_frame_no] = self.prepare_image(
                                                         image=img,
                                                         width=width,
                                                         height=height,
@@ -740,9 +754,10 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_affected_list = [False for i in range(video_length)]
 
         if controlnet_image_map:
-            for key_frame_no in controlnet_image_map:
-                for type_str in controlnet_image_map[key_frame_no]:
+            for type_str in controlnet_image_map:
+                for key_frame_no in controlnet_image_map[type_str]:
                     scale_list = controlnet_type_map[type_str]["control_scale_list"]
+                    scale_list = scale_list[0: context_frames]
                     scale_len = len(scale_list)
 
                     frames = [ i if 0 <= i < video_length else (i+video_length if 0 > i else i- video_length) for i in range(key_frame_no-scale_len, key_frame_no+scale_len+1)]
@@ -754,7 +769,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                     for f in frames:
                         controlnet_affected_list[f] = True
-
 
         def controlnet_is_affected( frame_index:int):
             return controlnet_affected_list[frame_index]
@@ -773,26 +787,28 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             return keep * scale
 
         def get_controlnet_variable(
-                frame_index: int,
+                type_str: str,
                 cur_step: int,
                 step_length: int,
+                target_frames: List[int],
                 ):
             cont_vars = []
 
             if not controlnet_image_map:
                 return None
 
-            if frame_index not in controlnet_image_map:
+            if type_str not in controlnet_image_map:
                 return None
 
-            for t, img in controlnet_image_map[frame_index].items():
+            for fr, img in controlnet_image_map[type_str].items():
 
-                cont_vars.append( {
-                    "type" : t,
-                    "image" : img,
-                    "cond_scale" : get_controlnet_scale(t, cur_step, step_length),
-                    "guess_mode" : controlnet_type_map[t]["guess_mode"]
-                } )
+                if fr in target_frames:
+                    cont_vars.append( {
+                        "frame_no" : fr,
+                        "image" : img,
+                        "cond_scale" : get_controlnet_scale(type_str, cur_step, step_length),
+                        "guess_mode" : controlnet_type_map[type_str]["guess_mode"]
+                    } )
 
             return cont_vars
 
@@ -844,7 +860,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                 # { "0_type_str" : (down_samples, mid_sample)  }
                 controlnet_result={}
-                controlnet_samples_on_vram = 0
 
                 def get_controlnet_result(context: List[int] = None):
                     #logger.info(f"get_controlnet_result called {context=}")
@@ -859,8 +874,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                     _down_block_res_samples=[]
 
-                    first_down = list(controlnet_result.values())[0][0]
-                    first_mid = list(controlnet_result.values())[0][1]
+                    first_down = list(list(controlnet_result.values())[0].values())[0][0]
+                    first_mid = list(list(controlnet_result.values())[0].values())[0][1]
                     for ii in range(len(first_down)):
                         _down_block_res_samples.append(
                             torch.zeros(
@@ -874,78 +889,128 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                                     dtype=first_mid.dtype,
                                     )
 
-                    for result in controlnet_result:
-                        val = controlnet_result[result]
-                        cur_down = [ v.to(device = device, dtype=first_down[0].dtype) for v in val[0] ]
-                        cur_mid =val[1].to(device = device, dtype=first_mid.dtype)
-                        loc =  list(set(context) & set(controlnet_scale_map[result]["frames"]))
-                        scales = []
+                    for fr in controlnet_result:
+                        for type_str in controlnet_result[fr]:
+                            result = str(fr) + "_" + type_str
 
-                        for o in loc:
-                            for j, f in enumerate(controlnet_scale_map[result]["frames"]):
-                                if o == f:
-                                    scales.append(controlnet_scale_map[result]["scales"][j])
-                                    break
-                        loc_index=[]
+                            val = controlnet_result[fr][type_str]
+                            cur_down = [ v.to(device = device, dtype=first_down[0].dtype) for v in val[0] ]
+                            cur_mid =val[1].to(device = device, dtype=first_mid.dtype)
+                            loc =  list(set(context) & set(controlnet_scale_map[result]["frames"]))
+                            scales = []
 
-                        for o in loc:
-                            for j, f in enumerate( context ):
-                                if o==f:
-                                    loc_index.append(j)
-                                    break
+                            for o in loc:
+                                for j, f in enumerate(controlnet_scale_map[result]["frames"]):
+                                    if o == f:
+                                        scales.append(controlnet_scale_map[result]["scales"][j])
+                                        break
+                            loc_index=[]
 
-                        mod = torch.tensor(scales).to(device, dtype=cur_mid.dtype)
+                            for o in loc:
+                                for j, f in enumerate( context ):
+                                    if o==f:
+                                        loc_index.append(j)
+                                        break
 
-                        add = cur_mid * mod[None,None,:,None,None]
-                        _mid_block_res_samples[:, :, loc_index, :, :] = _mid_block_res_samples[:, :, loc_index, :, :] + add
+                            mod = torch.tensor(scales).to(device, dtype=cur_mid.dtype)
 
-                        for ii in range(len(cur_down)):
-                            add = cur_down[ii] * mod[None,None,:,None,None]
-                            _down_block_res_samples[ii][:, :, loc_index, :, :] = _down_block_res_samples[ii][:, :, loc_index, :, :] + add
+                            add = cur_mid * mod[None,None,:,None,None]
+                            _mid_block_res_samples[:, :, loc_index, :, :] = _mid_block_res_samples[:, :, loc_index, :, :] + add
+
+                            for ii in range(len(cur_down)):
+                                add = cur_down[ii] * mod[None,None,:,None,None]
+                                _down_block_res_samples[ii][:, :, loc_index, :, :] = _down_block_res_samples[ii][:, :, loc_index, :, :] + add
 
                     return _down_block_res_samples, _mid_block_res_samples
 
+                def process_controlnet( target_frames: List[int] = None ):
+                    #logger.info(f"process_controlnet called {target_frames=}")
+                    nonlocal controlnet_result
 
-                for frame_no in range(latents.shape[2]):
-                    cont_vars = get_controlnet_variable(frame_no, i, len(timesteps))
-                    if not cont_vars:
-                        continue
+                    controlnet_samples_on_vram = 0
 
-                    latent_model_input = (
-                        latents[:, :, [frame_no]]
-                        .to(device)
-                        .repeat(2 if do_classifier_free_guidance else 1, 1, 1, 1, 1)
-                    )
-                    control_model_input = self.scheduler.scale_model_input(latent_model_input, t)[:, :, 0]
-                    controlnet_prompt_embeds = get_current_prompt_embeds([frame_no], latents.shape[2])
+                    loc =  list(set(target_frames) & set(controlnet_result.keys()))
 
-                    for cont_var in cont_vars:
-                        down_samples, mid_sample = self.controlnet_map[cont_var["type"]](
-                            control_model_input,
-                            t,
-                            encoder_hidden_states=controlnet_prompt_embeds,
-                            controlnet_cond=cont_var["image"],
-                            conditioning_scale=cont_var["cond_scale"],
-                            guess_mode=cont_var["guess_mode"],
-                            return_dict=False,
-                        )
+                    controlnet_result = {key: controlnet_result[key] for key in loc}
 
-                        for ii in range(len(down_samples)):
-                            down_samples[ii] = rearrange(down_samples[ii], "(b f) c h w -> b c f h w", f=1)
-                        mid_sample = rearrange(mid_sample, "(b f) c h w -> b c f h w", f=1)
+                    target_frames = list(set(target_frames) - set(loc))
 
-                        if controlnet_max_samples_on_vram < controlnet_samples_on_vram:
-                            down_samples = [ v.to(device = torch.device("cpu")) for v in down_samples ]
-                            mid_sample = mid_sample.to(device = torch.device("cpu"))
+                    def sample_to_device( sample ):
+                        nonlocal controlnet_samples_on_vram
+
+                        if controlnet_max_samples_on_vram <= controlnet_samples_on_vram:
+                            down_samples = [ v.to(device = torch.device("cpu")) for v in sample[0] ]
+                            mid_sample = sample[1].to(device = torch.device("cpu"))
                         else:
+                            if sample[0][0].device != device:
+                                down_samples = [ v.to(device = device) for v in sample[0] ]
+                                mid_sample = sample[1].to(device = device)
+                            else:
+                                down_samples = sample[0]
+                                mid_sample = sample[1]
                             controlnet_samples_on_vram += 1
+                        return down_samples, mid_sample
 
-                        controlnet_result[str(frame_no) + "_" + cont_var["type"]] = (down_samples, mid_sample)
 
+                    for fr in controlnet_result:
+                        for type_str in controlnet_result[fr]:
+                            controlnet_result[fr][type_str] = sample_to_device(controlnet_result[fr][type_str])
+
+                    for type_str in controlnet_type_map:
+                        cont_vars = get_controlnet_variable(type_str, i, len(timesteps), target_frames)
+                        if not cont_vars:
+                            continue
+
+                        org_device = self.controlnet_map[type_str].device
+                        if org_device != device:
+                            self.controlnet_map[type_str] = self.controlnet_map[type_str].to(device=device)
+
+                        for cont_var in cont_vars:
+                            frame_no = cont_var["frame_no"]
+
+                            latent_model_input = (
+                                latents[:, :, [frame_no]]
+                                .to(device)
+                                .repeat(2 if do_classifier_free_guidance else 1, 1, 1, 1, 1)
+                            )
+                            control_model_input = self.scheduler.scale_model_input(latent_model_input, t)[:, :, 0]
+                            controlnet_prompt_embeds = get_current_prompt_embeds([frame_no], latents.shape[2])
+
+                            down_samples, mid_sample = self.controlnet_map[type_str](
+                                control_model_input,
+                                t,
+                                encoder_hidden_states=controlnet_prompt_embeds,
+                                controlnet_cond=cont_var["image"],
+                                conditioning_scale=cont_var["cond_scale"],
+                                guess_mode=cont_var["guess_mode"],
+                                return_dict=False,
+                            )
+
+                            for ii in range(len(down_samples)):
+                                down_samples[ii] = rearrange(down_samples[ii], "(b f) c h w -> b c f h w", f=1)
+                            mid_sample = rearrange(mid_sample, "(b f) c h w -> b c f h w", f=1)
+
+                            if frame_no not in controlnet_result:
+                                controlnet_result[frame_no] = {}
+
+                            controlnet_result[frame_no][type_str] = sample_to_device((down_samples, mid_sample))
+
+                        if org_device != device:
+                            self.controlnet_map[type_str] = self.controlnet_map[type_str].to(device=org_device)
+
+                #logger.info(f"STEP start")
 
                 for context in context_scheduler(
                     i, num_inference_steps, latents.shape[2], context_frames, context_stride, context_overlap
                 ):
+                    #logger.info(f"{context=}")
+                    controlnet_target = list(range(context[0]-context_frames, context[0])) + context + list(range(context[-1]+1, context[-1]+1+context_frames))
+                    controlnet_target = [(f+video_length if f < 0 else f) for f in controlnet_target]
+                    controlnet_target = [(f-video_length if f >= video_length else f) for f in controlnet_target]
+                    controlnet_target = list(set(controlnet_target))
+
+                    process_controlnet(controlnet_target)
+
                     # expand the latents if we are doing classifier free guidance
                     latent_model_input = (
                         latents[:, :, context]

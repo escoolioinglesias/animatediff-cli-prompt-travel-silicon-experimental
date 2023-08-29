@@ -384,11 +384,10 @@ def generate(
                 controlnet_map=model_config.controlnet_map,
                 controlnet_image_map=controlnet_image_map,
                 controlnet_type_map=controlnet_type_map,
+                no_frames=no_frames,
             )
             outputs.append(output)
             torch.cuda.empty_cache()
-            if no_frames is not True:
-                save_frames(output, save_dir.joinpath(f"{gen_num:02d}-{seed}"))
 
             # increment the generation number
             gen_num += 1

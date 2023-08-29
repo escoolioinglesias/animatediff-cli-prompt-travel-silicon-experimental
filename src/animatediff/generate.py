@@ -33,7 +33,7 @@ from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
 from animatediff.utils.util import (get_resized_image, get_resized_images,
-                                    save_video)
+                                    save_frames, save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -517,17 +517,9 @@ def run_inference(
     controlnet_map: Dict[str, Any] = None,
     controlnet_image_map: Dict[str,Any] = None,
     controlnet_type_map: Dict[str,Any] = None,
+    no_frames :bool = False,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
-
-    '''
-    if not controlnet_type_map:
-        controlnet_type_map=None
-    if not controlnet_image_map:
-        controlnet_image_map=None
-    '''
-    if seed == -1:
-        seed = torch.seed()
 
     seed_everything(seed)
 
@@ -548,13 +540,17 @@ def run_inference(
         prompt_map=prompt_map,
         controlnet_type_map=controlnet_type_map,
         controlnet_image_map=controlnet_image_map,
-        controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999
+        controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999,
+        controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
     )
     logger.info("Generation complete, saving...")
 
     # Trim and clean up the prompt for filename use
     prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
     prompt_str = "_".join((prompt_tags[:6]))
+
+    if no_frames is not True:
+        save_frames(pipeline_output, out_dir.joinpath(f"{idx:02d}-{seed}"))
 
     # generate the output filename and save the video
     out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}.gif")

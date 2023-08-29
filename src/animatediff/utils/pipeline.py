@@ -6,7 +6,6 @@ import torch._dynamo as dynamo
 from diffusers import StableDiffusionPipeline
 from einops._torch_specific import allow_ops_in_compiled_graph
 
-from animatediff.pipelines import AnimationPipeline
 from animatediff.utils.device import get_memory_format, get_model_dtypes
 from animatediff.utils.model import nop_train
 
@@ -53,7 +52,8 @@ def send_to_device(
     if hasattr(pipeline, 'controlnet_map'):
         if pipeline.controlnet_map:
             for c in pipeline.controlnet_map:
-                pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
+                #pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
+                pipeline.controlnet_map[c] = pipeline.controlnet_map[c].to(dtype=unet_dtype, memory_format=model_memory_format)
 
 
     pipeline.unet = pipeline.unet.to(device=device, dtype=unet_dtype, memory_format=model_memory_format)
