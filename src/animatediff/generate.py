@@ -542,6 +542,7 @@ def run_inference(
         controlnet_image_map=controlnet_image_map,
         controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999,
         controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
+        controlnet_is_loop = controlnet_map["is_loop"] if "is_loop" in controlnet_map else True,
     )
     logger.info("Generation complete, saving...")
 

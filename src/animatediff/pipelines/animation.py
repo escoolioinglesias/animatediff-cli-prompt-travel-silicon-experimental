@@ -612,6 +612,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_image_map: Dict[int, Dict[str,Any]] = None,
         controlnet_max_samples_on_vram: int = 999,
         controlnet_max_models_on_vram: int=99,
+        controlnet_is_loop: bool=True,
         **kwargs,
     ):
         controlnet_image_map_org = controlnet_image_map
@@ -751,7 +752,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
         # { "0_type_str" : { "scales" = [0.1, 0.3, 0.5, 1.0, 0.5, 0.3, 0.1], "frames"=[125, 126, 127, 0, 1, 2, 3] }}
         controlnet_scale_map = {}
-        controlnet_affected_list = [False for i in range(video_length)]
+        controlnet_affected_list = np.zeros(video_length,dtype = int)
 
         if controlnet_image_map:
             for type_str in controlnet_image_map:
@@ -760,15 +761,22 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     scale_list = scale_list[0: context_frames]
                     scale_len = len(scale_list)
 
-                    frames = [ i if 0 <= i < video_length else (i+video_length if 0 > i else i- video_length) for i in range(key_frame_no-scale_len, key_frame_no+scale_len+1)]
+                    if controlnet_is_loop:
+                        frames = [ i%video_length for i in range(key_frame_no-scale_len, key_frame_no+scale_len+1)]
 
-                    controlnet_scale_map[str(key_frame_no) + "_" + type_str] = {
-                        "scales" : scale_list[::-1] + [1.0] + scale_list,
-                        "frames" : frames,
-                    }
+                        controlnet_scale_map[str(key_frame_no) + "_" + type_str] = {
+                            "scales" : scale_list[::-1] + [1.0] + scale_list,
+                            "frames" : frames,
+                        }
+                    else:
+                        frames = [ i for i in range(max(0, key_frame_no-scale_len), min(key_frame_no+scale_len+1, video_length))]
 
-                    for f in frames:
-                        controlnet_affected_list[f] = True
+                        controlnet_scale_map[str(key_frame_no) + "_" + type_str] = {
+                            "scales" : scale_list[:key_frame_no][::-1] + [1.0] + scale_list[:video_length-key_frame_no-1],
+                            "frames" : frames,
+                        }
+
+                    controlnet_affected_list[frames] = 1
 
         def controlnet_is_affected( frame_index:int):
             return controlnet_affected_list[frame_index]
@@ -1003,10 +1011,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                 for context in context_scheduler(
                     i, num_inference_steps, latents.shape[2], context_frames, context_stride, context_overlap
                 ):
-                    #logger.info(f"{context=}")
                     controlnet_target = list(range(context[0]-context_frames, context[0])) + context + list(range(context[-1]+1, context[-1]+1+context_frames))
-                    controlnet_target = [(f+video_length if f < 0 else f) for f in controlnet_target]
-                    controlnet_target = [(f-video_length if f >= video_length else f) for f in controlnet_target]
+                    controlnet_target = [f%video_length for f in controlnet_target]
                     controlnet_target = list(set(controlnet_target))
 
                     process_controlnet(controlnet_target)
