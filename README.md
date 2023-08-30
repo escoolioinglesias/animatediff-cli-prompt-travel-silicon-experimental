@@ -77,6 +77,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "max_models_on_vram" : 3,       # Number of controlnet models to be placed in vram
     "save_detectmap" : true,        # save preprocessed image or not
     "preprocess_on_gpu": true,      # run preprocess on gpu or not (It probably does not affect vram usage at peak, so it should always set true.)
+    "is_loop": true,                # Whether controlnet effects consider loop
 
     "controlnet_tile":{    # config for controlnet_tile
       "enable": true,              # enable/disable (important)
@@ -171,9 +172,9 @@ venv\Scripts\activate.bat
 
 # with this setup, it took about a minute to generate in my environment(RTX4090). VRAM usage was 6-7 GB
 # width 256 / height 384 / length 128 frames / context 16 frames
-animatediff generate -c config/prompts/prompt_travel.json -W 256 -H 384 -L128 -C 16
+animatediff generate -c config/prompts/prompt_travel.json -W 256 -H 384 -L 128 -C 16
 # 5min / 9-10GB
-animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16
+animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L 128 -C 16
 
 # upscale using controlnet (tile, line anime, ip2p, ref)
 # specify the directory of the frame generated in the above step
@@ -200,8 +201,16 @@ ex.  \_\_animal\_\_ for animal.txt. \_\_background-color\_\_ for background-colo
 - checkpoint : [mistoonAnime_v20](https://civitai.com/models/24149/mistoonanime) for anime, [xxmix9realistic_v40](https://civitai.com/models/47274) for photoreal
 - scheduler : "k_dpmpp_sde"
 - upscale : Enable controlnet_tile and controlnet_ip2p only. If you can provide a good reference image, controlnet_ref may also be useful.
+
+### Recommended settings for 8-12 GB of vram
 - max_samples_on_vram : Set to 0 if vram is insufficient when using controlnet
- 
+- max_models_on_vram : 1
+- Generate at lower resolution and upscale to higher resolution
+```sh
+animatediff generate -c config/prompts/your_config.json -W 384 -H 576 -L 48 -C 16
+animatediff tile-upscale output/2023-08-25T20-00-00-sample-mistoonanime_v20/00-341774366206100 -W 512
+```
+
 ### Limitations
 - lora support is limited. Not all formats can be used!!!
 - It is not possible to specify lora in the prompt.
