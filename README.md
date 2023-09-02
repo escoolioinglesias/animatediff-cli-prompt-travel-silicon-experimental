@@ -29,7 +29,8 @@ It seems to work surprisingly well!
 <br>
 
 ### Installation(for windows)
-Same as the original animatediff-cli
+Same as the original animatediff-cli  
+[Python 3.10](https://www.python.org/) and git client must be installed
 ```sh
 git clone https://github.com/s9roll7/animatediff-cli-prompt-travel.git
 cd animatediff-cli
@@ -123,7 +124,18 @@ Almost same as the original animatediff-cli, but with a slight change in config 
       "control_guidance_start": 0.0,
       "control_guidance_end": 1.0,
       "control_scale_list":[0.5,0.4,0.3,0.2,0.1]
-    }
+    },
+    "controlnet_ref": {
+        "enable": false,            # enable/disable (important)
+        "ref_image": "ref_image/ref_sample.png",     # path to reference image.
+        "attention_auto_machine_weight": 1.0,
+        "gn_auto_machine_weight": 1.0,
+        "style_fidelity": 0.5,                # control weight-like parameter(important)
+        "reference_attn": true,               # [attn=true , adain=false] means "reference_only"
+        "reference_adain": false,
+        "scale_pattern":[0.5]                 # Pattern for applying controlnet_ref to frames
+    }                                         # ex. [0.5] means [0.5,0.5,0.5,0.5,0.5 .... ]. All frames are affected by 50%
+                                              # ex. [1, 0] means [1,0,1,0,1,0,1,0,1,0,1 ....]. Only even frames are affected by 100%.
   },
   "upscale_config": {       # config for tile-upscale
     "scheduler": "ddim",
