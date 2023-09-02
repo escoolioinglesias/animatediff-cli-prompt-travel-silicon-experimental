@@ -1,3 +1,4 @@
+import logging
 from os import PathLike
 from pathlib import Path
 from typing import List
@@ -9,6 +10,7 @@ from torch import Tensor
 from torchvision.utils import save_image
 from tqdm.rich import tqdm
 
+logger = logging.getLogger(__name__)
 
 def save_frames(video: Tensor, frames_dir: PathLike):
     frames_dir = Path(frames_dir)
@@ -82,4 +84,68 @@ def get_resized_image(org_image_path: str, us_width: int, us_height: int):
         us_height = H/W * us_width
 
     return resize_for_condition_image(image, us_width, us_height)
+
+
+
+def show_gpu(comment):
+    pass
+#    import GPUtil
+#    logger.info(comment)
+#    GPUtil.showUtilization()
+
+
+PROFILE_ON = False
+
+def start_profile():
+    if PROFILE_ON:
+        import cProfile
+
+        pr = cProfile.Profile()
+        pr.enable()
+        return pr
+    else:
+        return None
+
+def end_profile(pr, file_name):
+    if PROFILE_ON:
+        import io
+        import pstats
+
+        pr.disable()
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('cumtime')
+        ps.print_stats()
+
+        with open(file_name, 'w+') as f:
+            f.write(s.getvalue())
+
+STOPWATCH_ON = False
+
+time_record = []
+start_time = 0
+
+def stopwatch_start():
+    global start_time,time_record
+    import time
+
+    if STOPWATCH_ON:
+        time_record = []
+        torch.cuda.synchronize()
+        start_time = time.time()
+
+def stopwatch_record(comment):
+    import time
+
+    if STOPWATCH_ON:
+        torch.cuda.synchronize()
+        time_record.append(((time.time() - start_time) , comment))
+
+def stopwatch_stop(comment):
+
+    if STOPWATCH_ON:
+        stopwatch_record(comment)
+
+        for rec in time_record:
+            logger.info(rec)
+
 

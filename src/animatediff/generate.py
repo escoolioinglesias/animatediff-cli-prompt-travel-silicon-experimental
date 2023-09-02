@@ -434,7 +434,7 @@ def controlnet_preprocess(
         ):
 
     if not controlnet_map:
-        return None, None
+        return None, None, None
 
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
@@ -450,6 +450,9 @@ def controlnet_preprocess(
     device_str = device_str if preprocess_on_gpu else None
 
     for c in controlnet_map:
+        if c == "controlnet_ref":
+            continue
+
         item = controlnet_map[c]
 
         processed = False
@@ -490,7 +493,33 @@ def controlnet_preprocess(
 
     clear_controlnet_preprocessor()
 
-    return controlnet_image_map, controlnet_type_map
+    controlnet_ref_map = None
+
+    if "controlnet_ref" in controlnet_map:
+        r = controlnet_map["controlnet_ref"]
+        if r["enable"] == True:
+            org_name = data_dir.joinpath( r["ref_image"]).stem
+            ref_image = get_resized_image( data_dir.joinpath( r["ref_image"] ) , width, height)
+
+            if ref_image is not None:
+                controlnet_ref_map = {
+                    "ref_image" : ref_image,
+                    "style_fidelity" : r["style_fidelity"],
+                    "attention_auto_machine_weight" : r["attention_auto_machine_weight"],
+                    "gn_auto_machine_weight" : r["gn_auto_machine_weight"],
+                    "reference_attn" : r["reference_attn"],
+                    "reference_adain" : r["reference_adain"],
+                    "scale_pattern" : r["scale_pattern"]
+                }
+
+                if save_detectmap:
+                    det_dir = out_dir.joinpath(f"{0:02d}_detectmap/controlnet_ref")
+                    det_dir.mkdir(parents=True, exist_ok=True)
+                    save_path = det_dir.joinpath(f"{org_name}.png")
+                    ref_image.save(save_path)
+
+
+    return controlnet_image_map, controlnet_type_map, controlnet_ref_map
 
 
 
@@ -517,6 +546,7 @@ def run_inference(
     controlnet_map: Dict[str, Any] = None,
     controlnet_image_map: Dict[str,Any] = None,
     controlnet_type_map: Dict[str,Any] = None,
+    controlnet_ref_map: Dict[str,Any] = None,
     no_frames :bool = False,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
@@ -540,10 +570,12 @@ def run_inference(
         prompt_map=prompt_map,
         controlnet_type_map=controlnet_type_map,
         controlnet_image_map=controlnet_image_map,
+        controlnet_ref_map=controlnet_ref_map,
         controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999,
         controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
         controlnet_is_loop = controlnet_map["is_loop"] if "is_loop" in controlnet_map else True,
     )
+
     logger.info("Generation complete, saving...")
 
     # Trim and clean up the prompt for filename use

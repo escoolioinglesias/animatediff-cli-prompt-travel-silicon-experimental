@@ -1,5 +1,6 @@
 # Adapted from https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention.py
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -11,6 +12,7 @@ from diffusers.utils import BaseOutput, maybe_allow_in_graph
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Transformer3DModelOutput(BaseOutput):

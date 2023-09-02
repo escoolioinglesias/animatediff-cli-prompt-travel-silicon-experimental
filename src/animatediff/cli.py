@@ -287,7 +287,7 @@ def generate(
     save_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Will save outputs to ./{path_from_cwd(save_dir)}")
 
-    controlnet_image_map,controlnet_type_map = controlnet_preprocess(model_config.controlnet_map, width, height, length, save_dir, device)
+    controlnet_image_map, controlnet_type_map, controlnet_ref_map = controlnet_preprocess(model_config.controlnet_map, width, height, length, save_dir, device)
 
     # beware the pipeline
     global pipeline
@@ -384,6 +384,7 @@ def generate(
                 controlnet_map=model_config.controlnet_map,
                 controlnet_image_map=controlnet_image_map,
                 controlnet_type_map=controlnet_type_map,
+                controlnet_ref_map=controlnet_ref_map,
                 no_frames=no_frames,
             )
             outputs.append(output)
