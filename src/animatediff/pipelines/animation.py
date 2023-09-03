@@ -36,7 +36,7 @@ from animatediff.pipelines.context import (get_context_scheduler,
                                            get_total_steps)
 from animatediff.utils.model import nop_train
 from animatediff.utils.pipeline import get_memory_format
-from animatediff.utils.util import (end_profile, start_profile,
+from animatediff.utils.util import (end_profile, show_gpu, start_profile,
                                     stopwatch_record, stopwatch_start,
                                     stopwatch_stop)
 
@@ -1937,7 +1937,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                 image=ref_image,
                 width=width,
                 height=height,
-                batch_size=context_frames * 1,
+                batch_size=1 * 1,
                 num_images_per_prompt=1,
                 device=device,
                 dtype=prompt_embeds.dtype,

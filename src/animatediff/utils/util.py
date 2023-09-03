@@ -90,6 +90,7 @@ def get_resized_image(org_image_path: str, us_width: int, us_height: int):
 def show_gpu(comment):
     pass
 #    import GPUtil
+#    torch.cuda.synchronize()
 #    logger.info(comment)
 #    GPUtil.showUtilization()
 
