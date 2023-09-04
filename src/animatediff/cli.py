@@ -13,8 +13,8 @@ from rich.logging import RichHandler
 
 from animatediff import __version__, console, get_dir
 from animatediff.generate import (controlnet_preprocess, create_pipeline,
-                                  create_us_pipeline, run_inference,
-                                  run_upscale)
+                                  create_us_pipeline, ip_adapter_preprocess,
+                                  run_inference, run_upscale)
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
 from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
                                   ModelConfig, get_infer_config,
@@ -288,6 +288,7 @@ def generate(
     logger.info(f"Will save outputs to ./{path_from_cwd(save_dir)}")
 
     controlnet_image_map, controlnet_type_map, controlnet_ref_map = controlnet_preprocess(model_config.controlnet_map, width, height, length, save_dir, device)
+    ip_adapter_map = ip_adapter_preprocess(model_config.ip_adapter_map, width, height, length, save_dir)
 
     # beware the pipeline
     global pipeline
@@ -386,6 +387,7 @@ def generate(
                 controlnet_type_map=controlnet_type_map,
                 controlnet_ref_map=controlnet_ref_map,
                 no_frames=no_frames,
+                ip_adapter_map=ip_adapter_map,
             )
             outputs.append(output)
             torch.cuda.empty_cache()

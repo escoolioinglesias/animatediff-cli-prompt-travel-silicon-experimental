@@ -23,6 +23,13 @@
     "share/Lora/muffet_v2.safetensors" : 1.0,
     "share/Lora/add_detail.safetensors" : 1.0
   },
+  "ip_adapter_map": {
+      "enable": true,
+      "input_image_dir": "ip_adapter_image/test",
+      "save_input_image": true,
+      "scale": 0.5,
+      "is_plus": true
+  },
   "controlnet_map": {
     "input_image_dir" : "controlnet_image/test",
     "max_samples_on_vram": 200,

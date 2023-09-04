@@ -33,7 +33,8 @@ from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
 from animatediff.utils.util import (get_resized_image, get_resized_images,
-                                    save_frames, save_video)
+                                    prepare_ip_adapter, save_frames,
+                                    save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +523,41 @@ def controlnet_preprocess(
     return controlnet_image_map, controlnet_type_map, controlnet_ref_map
 
 
+def ip_adapter_preprocess(
+        ip_adapter_config_map: Dict[str, Any] = None,
+        width: int = 512,
+        height: int = 512,
+        duration: int = 16,
+        out_dir: PathLike = ...,
+        ):
+
+    ip_adapter_map={}
+
+    processed = False
+
+    if ip_adapter_config_map:
+        if ip_adapter_config_map["enable"] == True:
+            image_dir = data_dir.joinpath( ip_adapter_config_map["input_image_dir"] )
+            imgs = sorted(glob.glob( os.path.join(image_dir, "[0-9]*.png"), recursive=False))
+            if len(imgs) > 0:
+                prepare_ip_adapter()
+                ip_adapter_map["scale"] = ip_adapter_config_map["scale"]
+                ip_adapter_map["is_plus"] = ip_adapter_config_map["is_plus"]
+                ip_adapter_map["images"] = {}
+                for img_path in imgs:
+                    frame_no = int(Path(img_path).stem)
+                    if frame_no < duration:
+                        ip_adapter_map["images"][frame_no] = get_resized_image(img_path, width, height)
+                        processed = True
+
+            if (ip_adapter_config_map["save_input_image"] == True) and processed:
+                det_dir = out_dir.joinpath(f"{0:02d}_ip_adapter/")
+                det_dir.mkdir(parents=True, exist_ok=True)
+                for frame_no in ip_adapter_map["images"]:
+                    save_path = det_dir.joinpath(f"{frame_no:04d}.png")
+                    ip_adapter_map["images"][frame_no].save(save_path)
+
+    return ip_adapter_map if processed else None
 
 
 def run_inference(
@@ -548,6 +584,7 @@ def run_inference(
     controlnet_type_map: Dict[str,Any] = None,
     controlnet_ref_map: Dict[str,Any] = None,
     no_frames :bool = False,
+    ip_adapter_map: Dict[str,Any] = None,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
@@ -574,6 +611,7 @@ def run_inference(
         controlnet_max_samples_on_vram=controlnet_map["max_samples_on_vram"] if "max_samples_on_vram" in controlnet_map else 999,
         controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
         controlnet_is_loop = controlnet_map["is_loop"] if "is_loop" in controlnet_map else True,
+        ip_adapter_map=ip_adapter_map,
     )
 
     logger.info("Generation complete, saving...")

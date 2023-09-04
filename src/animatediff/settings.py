@@ -106,6 +106,7 @@ class ModelConfig(BaseSettings):
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
     prompt_map: Dict[str,str]= Field({})
     lora_map: Dict[str,float]= Field({})
+    ip_adapter_map: Dict[str,Any]= Field({})
     controlnet_map: Dict[str,Any]= Field({})
     upscale_config: Dict[str,Any]= Field({})
     result: Dict[str,Any]= Field({})

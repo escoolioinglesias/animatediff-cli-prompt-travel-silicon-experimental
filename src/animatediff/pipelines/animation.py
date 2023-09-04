@@ -25,6 +25,7 @@ from packaging import version
 from tqdm.rich import tqdm
 from transformers import CLIPImageProcessor, CLIPTokenizer
 
+from animatediff.ip_adapter import IPAdapter, IPAdapterPlus
 from animatediff.models.attention import BasicTransformerBlock
 from animatediff.models.clip import CLIPSkipTextModel
 from animatediff.models.unet import (UNet3DConditionModel,
@@ -76,6 +77,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         PNDMScheduler,
     ]
     controlnet_map: Dict[ str , ControlNetModel ]
+    ip_adapter: IPAdapter = None
 
     def __init__(
         self,
@@ -1718,6 +1720,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_max_samples_on_vram: int = 999,
         controlnet_max_models_on_vram: int=99,
         controlnet_is_loop: bool=True,
+        ip_adapter_map: Dict[str, Any] = None,
         **kwargs,
     ):
         global C_REF_MODE
@@ -1748,6 +1751,16 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         device = self._execution_device
         latents_device = torch.device("cpu") if sequential_mode else device
 
+
+        if ip_adapter_map:
+            if self.ip_adapter is None:
+                img_enc_path = "data/models/ip_adapter/models/image_encoder/"
+                if ip_adapter_map["is_plus"]:
+                    self.ip_adapter = IPAdapterPlus(self, img_enc_path, "data/models/ip_adapter/models/ip-adapter-plus_sd15.bin", device, 16)
+                else:
+                    self.ip_adapter = IPAdapter(self, img_enc_path, "data/models/ip_adapter/models/ip-adapter_sd15.bin", device, 4)
+                self.ip_adapter.set_scale( ip_adapter_map["scale"] )
+
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
@@ -1758,6 +1771,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             cross_attention_kwargs.get("scale", None) if cross_attention_kwargs is not None else None
         )
 
+        ### text
         prompt_embeds_map = {}
         prompt_map = dict(sorted(prompt_map.items()))
 
@@ -1781,6 +1795,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             positive = prompt_embeds
             positive = positive.chunk(positive.shape[0], 0)
 
+        if self.ip_adapter:
+            self.ip_adapter.set_text_length(positive[0].shape[1])
+
         for i, key_frame in enumerate(prompt_map):
             if do_classifier_free_guidance:
                 prompt_embeds_map[key_frame] = torch.cat([negative[i] , positive[i]])
@@ -1790,7 +1807,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         key_first =list(prompt_map.keys())[0]
         key_last =list(prompt_map.keys())[-1]
 
-        def get_current_prompt_embeds(
+        def get_current_prompt_embeds_from_text(
                 context: List[int] = None,
                 video_length : int = 0
                 ):
@@ -1812,18 +1829,88 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             if dist_next < 0:
                 dist_next += video_length
 
-#            logger.info("center_frame="+ str(center_frame))
-#            logger.info("key_prev="+ str(key_prev))
-#            logger.info("key_next="+ str(key_next))
-
             if key_prev == key_next or dist_prev + dist_next == 0:
                 return prompt_embeds_map[key_prev]
 
             rate = dist_prev / (dist_prev + dist_next)
 
-#            logger.info("rate="+ str(rate))
-
             return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
+
+        ### image
+        if self.ip_adapter:
+            im_prompt_embeds_map = {}
+            ip_im_map = ip_adapter_map["images"]
+
+            ip_im_map = dict(sorted(ip_im_map.items()))
+
+            ip_im_list = [ip_im_map[key_frame] for key_frame in ip_im_map.keys()]
+
+            positive, negative = self.ip_adapter.get_image_embeds(ip_im_list)
+
+            bs_embed, seq_len, _ = positive.shape
+            positive = positive.repeat(1, 1, 1)
+            positive = positive.view(bs_embed * 1, seq_len, -1)
+
+            bs_embed, seq_len, _ = negative.shape
+            negative = negative.repeat(1, 1, 1)
+            negative = negative.view(bs_embed * 1, seq_len, -1)
+
+            if do_classifier_free_guidance:
+                negative = negative.chunk(negative.shape[0], 0)
+                positive = positive.chunk(positive.shape[0], 0)
+            else:
+                positive = positive.chunk(positive.shape[0], 0)
+
+            for i, key_frame in enumerate(ip_im_map):
+                if do_classifier_free_guidance:
+                    im_prompt_embeds_map[key_frame] = torch.cat([negative[i] , positive[i]])
+                else:
+                    im_prompt_embeds_map[key_frame] = positive[i]
+
+            im_key_first =list(ip_im_map.keys())[0]
+            im_key_last =list(ip_im_map.keys())[-1]
+
+        def get_current_prompt_embeds_from_image(
+                context: List[int] = None,
+                video_length : int = 0
+                ):
+            center_frame = context[len(context)//2]
+
+            key_prev = im_key_last
+            key_next = im_key_first
+
+            for p in ip_im_map.keys():
+                if p > center_frame:
+                    key_next = p
+                    break
+                key_prev = p
+
+            dist_prev = center_frame - key_prev
+            if dist_prev < 0:
+                dist_prev += video_length
+            dist_next = key_next - center_frame
+            if dist_next < 0:
+                dist_next += video_length
+
+            if key_prev == key_next or dist_prev + dist_next == 0:
+                return im_prompt_embeds_map[key_prev]
+
+            rate = dist_prev / (dist_prev + dist_next)
+
+            return im_prompt_embeds_map[key_prev] * (1-rate) + im_prompt_embeds_map[key_next] * (rate)
+
+
+        def get_current_prompt_embeds(
+                context: List[int] = None,
+                video_length : int = 0
+                ):
+            text_emb = get_current_prompt_embeds_from_text(context, video_length)
+            if self.ip_adapter:
+                image_emb = get_current_prompt_embeds_from_image(context, video_length)
+                return torch.cat([text_emb,image_emb], dim=1)
+            else:
+                return text_emb
+
 
         # 3.5 Prepare controlnet variables
 
