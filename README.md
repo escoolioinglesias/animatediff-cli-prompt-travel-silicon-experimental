@@ -1,6 +1,6 @@
 # AnimateDiff prompt travel
 
-AnimateDiff with prompt travel + controlnet
+[AnimateDiff](https://github.com/guoyww/AnimateDiff) with prompt travel + [ControlNet](https://github.com/lllyasviel/ControlNet) + [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter)
 
 I added a experimental feature to animatediff-cli to change the prompt in the middle of the frame.
 
@@ -71,6 +71,18 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "lora_map": {             # "PATH_TO_LORA" : STRENGTH format
     "share/Lora/muffet_v2.safetensors" : 1.0,                     # Specify lora as a path relative to /animatediff-cli/data
     "share/Lora/add_detail.safetensors" : 1.0                     # Lora support is limited. Not all formats can be used!!!
+  },
+  "ip_adapter_map": {       # config for ip-adapter
+      # enable/disable (important)
+      "enable": true,
+      # Specify input image directory relative to /animatediff-cli/data (important! No need to specify frames in the config file. The effect on generation is exactly the same logic as the placement of the prompt)
+      "input_image_dir": "ip_adapter_image/test",
+      # save input image or not
+      "save_input_image": true,
+      # Ratio of image prompt vs text prompt (important). Even if you want to emphasize only the image prompt in 1.0, do not leave prompt/neg prompt empty, but specify a general text such as "best quality".
+      "scale": 0.5,
+      # IP-Adapter or IP-Adapter Plus (important) It would be a completely different outcome. Not always PLUS a superior result.
+      "is_plus": true
   },
   "controlnet_map": {       # config for controlnet(for generation)
     "input_image_dir" : "controlnet_image/test",    # Specify input image directory relative to /animatediff-cli/data (important! Please refer to the directory structure of sample. No need to specify frames in the config file.)
@@ -227,6 +239,10 @@ animatediff tile-upscale output/2023-08-25T20-00-00-sample-mistoonanime_v20/00-3
 - lora support is limited. Not all formats can be used!!!
 - It is not possible to specify lora in the prompt.
 
+### Related resources
+- [AnimateDiff](https://github.com/guoyww/AnimateDiff)
+- [ControlNet](https://github.com/lllyasviel/ControlNet)
+- [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter)
 
 Below is the original readme.
 
