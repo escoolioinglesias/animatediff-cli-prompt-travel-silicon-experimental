@@ -544,6 +544,7 @@ def ip_adapter_preprocess(
                 prepare_ip_adapter()
                 ip_adapter_map["scale"] = ip_adapter_config_map["scale"]
                 ip_adapter_map["is_plus"] = ip_adapter_config_map["is_plus"]
+                ip_adapter_map["is_plus_face"] = ip_adapter_config_map["is_plus_face"] if "is_plus_face" in ip_adapter_config_map else False
                 ip_adapter_map["images"] = {}
                 for img_path in imgs:
                     frame_no = int(Path(img_path).stem)

@@ -1755,7 +1755,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         if ip_adapter_map:
             if self.ip_adapter is None:
                 img_enc_path = "data/models/ip_adapter/models/image_encoder/"
-                if ip_adapter_map["is_plus"]:
+                if ip_adapter_map["is_plus_face"]:
+                    self.ip_adapter = IPAdapterPlus(self, img_enc_path, "data/models/ip_adapter/models/ip-adapter-plus-face_sd15.bin", device, 16)
+                elif ip_adapter_map["is_plus"]:
                     self.ip_adapter = IPAdapterPlus(self, img_enc_path, "data/models/ip_adapter/models/ip-adapter-plus_sd15.bin", device, 16)
                 else:
                     self.ip_adapter = IPAdapter(self, img_enc_path, "data/models/ip_adapter/models/ip-adapter_sd15.bin", device, 4)

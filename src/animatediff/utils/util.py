@@ -176,6 +176,7 @@ def prepare_ip_adapter():
         "models/image_encoder/pytorch_model.bin",
         "models/ip-adapter-plus_sd15.bin",
         "models/ip-adapter_sd15.bin",
+        "models/ip-adapter-plus-face_sd15.bin"
     ]:
         path = Path(hub_file)
 

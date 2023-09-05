@@ -29,6 +29,7 @@
       "save_input_image": true,
       "resized_to_square": false,
       "scale": 0.5,
+      "is_plus_face": true,
       "is_plus": true
   },
   "controlnet_map": {
