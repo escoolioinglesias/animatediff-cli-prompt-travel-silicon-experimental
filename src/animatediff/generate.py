@@ -32,9 +32,9 @@ from animatediff.settings import InferenceConfig, ModelConfig
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
-from animatediff.utils.util import (get_resized_image, get_resized_images,
-                                    prepare_ip_adapter, save_frames,
-                                    save_video)
+from animatediff.utils.util import (get_resized_image, get_resized_image2,
+                                    get_resized_images, prepare_ip_adapter,
+                                    save_frames, save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -537,6 +537,7 @@ def ip_adapter_preprocess(
 
     if ip_adapter_config_map:
         if ip_adapter_config_map["enable"] == True:
+            resized_to_square = ip_adapter_config_map["resized_to_square"] if "resized_to_square" in ip_adapter_config_map else False
             image_dir = data_dir.joinpath( ip_adapter_config_map["input_image_dir"] )
             imgs = sorted(glob.glob( os.path.join(image_dir, "[0-9]*.png"), recursive=False))
             if len(imgs) > 0:
@@ -547,7 +548,10 @@ def ip_adapter_preprocess(
                 for img_path in imgs:
                     frame_no = int(Path(img_path).stem)
                     if frame_no < duration:
-                        ip_adapter_map["images"][frame_no] = get_resized_image(img_path, width, height)
+                        if resized_to_square:
+                            ip_adapter_map["images"][frame_no] = get_resized_image(img_path, 256, 256)
+                        else:
+                            ip_adapter_map["images"][frame_no] = get_resized_image2(img_path, 256)
                         processed = True
 
             if (ip_adapter_config_map["save_input_image"] == True) and processed:

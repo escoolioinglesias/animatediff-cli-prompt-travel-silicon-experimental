@@ -85,6 +85,20 @@ def get_resized_image(org_image_path: str, us_width: int, us_height: int):
 
     return resize_for_condition_image(image, us_width, us_height)
 
+def get_resized_image2(org_image_path: str, size: int):
+
+    image = Image.open( org_image_path )
+
+    W, H = image.size
+
+    if W < H:
+        us_width = size
+        us_height = int(size * H/W)
+    else:
+        us_width = int(size * W/H)
+        us_height = size
+
+    return resize_for_condition_image(image, us_width, us_height)
 
 
 def show_gpu(comment):

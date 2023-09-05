@@ -729,6 +729,36 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
 
         return image
 
+    def prepare_ref_image(
+        self,
+        image,
+        width,
+        height,
+        batch_size,
+        num_images_per_prompt,
+        device,
+        dtype,
+        do_classifier_free_guidance=False,
+        guess_mode=False,
+    ):
+        image = self.image_processor.preprocess(image, height=height, width=width).to(dtype=torch.float32)
+        image_batch_size = image.shape[0]
+
+        if image_batch_size == 1:
+            repeat_by = batch_size
+        else:
+            # image batch size is the same as prompt batch size
+            repeat_by = num_images_per_prompt
+
+        image = image.repeat_interleave(repeat_by, dim=0)
+
+        image = image.to(device=device, dtype=dtype)
+
+        if do_classifier_free_guidance and not guess_mode:
+            image = torch.cat([image] * 2)
+
+        return image
+
     # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img.StableDiffusionImg2ImgPipeline.get_timesteps
     def get_timesteps(self, num_inference_steps, strength, device):
         # get the original timestep using init_timestep
@@ -1042,7 +1072,7 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
             assert False
 
         # 5. Preprocess reference image
-        ref_image = self.prepare_control_image(
+        ref_image = self.prepare_ref_image(
             image=ref_image,
             width=width,
             height=height,
