@@ -7,9 +7,34 @@ I added a experimental feature to animatediff-cli to change the prompt in the mi
 It seems to work surprisingly well!
 
 ### Example
+
+- Numbered from left to right.
+- 1.prompt + lora
+- 2.prompt + lora + IP-Adapter(scale 0.5)
+- 3.prompt + lora + IP-Adapter Plus(scale 0.5)
+- 4.prompt + lora + Controlnet Reference Only(style_fidelity 0)
+- input image
+
+![0000](https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/4ae90f13-341d-4965-adfc-174ec2e61cd7)
+
+
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/d9d300a9-1107-4a3b-a1f1-3245b49dde10" muted="false"></video></div>
+<br>
+
+- 1.prompt + lora
+- 2.prompt + lora + IP-Adapter Plus Face(scale 0.5)
+- input image
+
+![face00001](https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/132afeeb-7483-4274-b11a-60158873bad9)
+
+<div height="512"><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/b20aec38-3ec9-4535-81a3-bd109a09ea52" muted="false"></video></div>
+<br>
+
+
 - controlnet_openpose + controlnet_softedge
 - input frames for controlnet(0,16,32 frames)
-![t0000](https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/4adac698-75a4-4c6d-bf64-a5723d0e3e77)
+<img src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/4adac698-75a4-4c6d-bf64-a5723d0e3e77" width="512">
+
 - result
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/50aa9d0d-15b6-4c84-a497-8d020d3bdb7c" muted="false"></video></div>
 <br>
@@ -24,9 +49,6 @@ It seems to work surprisingly well!
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/35fcf116-c4fd-4394-b9d0-7cad457afdbc" muted="false"></video></div>
 <br>
 
--  -> close-up -> close-up face -> close-up face, grin
-<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/8a608bd2-bddb-4bb7-af13-bcc8fe68a57a" muted="false"></video></div>
-<br>
 
 ### Installation(for windows)
 Same as the original animatediff-cli  
@@ -81,7 +103,8 @@ Almost same as the original animatediff-cli, but with a slight change in config 
       "save_input_image": true,
       # Ratio of image prompt vs text prompt (important). Even if you want to emphasize only the image prompt in 1.0, do not leave prompt/neg prompt empty, but specify a general text such as "best quality".
       "scale": 0.5,
-      # IP-Adapter or IP-Adapter Plus (important) It would be a completely different outcome. Not always PLUS a superior result.
+      # IP-Adapter or IP-Adapter Plus or IP-Adapter Plus Face (important) It would be a completely different outcome. Not always PLUS a superior result.
+      "is_plus_face": true,
       "is_plus": true
   },
   "controlnet_map": {       # config for controlnet(for generation)
