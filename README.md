@@ -118,6 +118,14 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "controlnet_tile":{    # config for controlnet_tile
       "enable": true,              # enable/disable (important)
       "use_preprocessor":true,      # Whether to use a preprocessor for each controlnet type
+      "preprocessor":{     # If not specified, the default preprocessor is selected.(Most of the time the default should be fine.)
+        # none/blur/tile_resample/upernet_seg/ or key in controlnet_aux.processor.MODELS
+        # https://github.com/patrickvonplaten/controlnet_aux/blob/2fd027162e7aef8c18d0a9b5a344727d37f4f13d/src/controlnet_aux/processor.py#L20
+        "type" : "tile_resample",
+        "param":{
+          "down_sampling_rate":2.0
+        }
+      },
       "guess_mode":false,
       "controlnet_conditioning_scale": 1.0,    # control weight (important)
       "control_guidance_start": 0.0,       # starting control step
@@ -154,6 +162,11 @@ Almost same as the original animatediff-cli, but with a slight change in config 
     "controlnet_softedge":{
       "enable": true,
       "use_preprocessor":true,
+      "preprocessor":{
+        "type" : "softedge_pidsafe",
+        "param":{
+        }
+      },
       "guess_mode":false,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
