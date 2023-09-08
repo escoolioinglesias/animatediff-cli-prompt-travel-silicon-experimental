@@ -552,7 +552,7 @@ def controlnet_preprocess(
             det_dir = out_dir.joinpath(f"{0:02d}_detectmap/{c}")
             det_dir.mkdir(parents=True, exist_ok=True)
             for frame_no in controlnet_image_map:
-                save_path = det_dir.joinpath(f"{frame_no:04d}.png")
+                save_path = det_dir.joinpath(f"{frame_no:08d}.png")
                 if c in controlnet_image_map[frame_no]:
                     controlnet_image_map[frame_no][c].save(save_path)
 
@@ -626,7 +626,7 @@ def ip_adapter_preprocess(
                 det_dir = out_dir.joinpath(f"{0:02d}_ip_adapter/")
                 det_dir.mkdir(parents=True, exist_ok=True)
                 for frame_no in ip_adapter_map["images"]:
-                    save_path = det_dir.joinpath(f"{frame_no:04d}.png")
+                    save_path = det_dir.joinpath(f"{frame_no:08d}.png")
                     ip_adapter_map["images"][frame_no].save(save_path)
 
     return ip_adapter_map if processed else None
@@ -649,7 +649,6 @@ def run_inference(
     context_overlap: int = 4,
     context_schedule: str = "uniform",
     clip_skip: int = 1,
-    return_dict: bool = False,
     prompt_map: Dict[int, str] = None,
     controlnet_map: Dict[str, Any] = None,
     controlnet_image_map: Dict[str,Any] = None,
@@ -657,6 +656,7 @@ def run_inference(
     controlnet_ref_map: Dict[str,Any] = None,
     no_frames :bool = False,
     ip_adapter_map: Dict[str,Any] = None,
+    output_map: Dict[str,Any] = None,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
@@ -670,7 +670,7 @@ def run_inference(
         width=width,
         height=height,
         video_length=duration,
-        return_dict=return_dict,
+        return_dict=False,
         context_frames=context_frames,
         context_stride=context_stride + 1,
         context_overlap=context_overlap,
@@ -692,15 +692,46 @@ def run_inference(
     prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
     prompt_str = "_".join((prompt_tags[:6]))
 
-    if no_frames is not True:
-        save_frames(pipeline_output, out_dir.joinpath(f"{idx:02d}-{seed}"))
+    frame_dir = out_dir.joinpath(f"{idx:02d}-{seed}")
+    out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}")
 
-    # generate the output filename and save the video
-    out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}.gif")
-    if return_dict is True:
-        save_video(pipeline_output["videos"], out_file)
+    output_format = "gif"
+    output_fps = 8
+    if output_map:
+        output_format = output_map["format"] if "format" in output_map else output_format
+        output_fps = output_map["fps"] if "fps" in output_map else output_fps
+        if output_format == "mp4":
+            output_format = "h264"
+
+    if output_format == "gif":
+        out_file = out_file.with_suffix(".gif")
+        if no_frames is not True:
+            save_frames(pipeline_output,frame_dir)
+
+            # generate the output filename and save the video
+            save_video(pipeline_output, out_file, output_fps)
     else:
-        save_video(pipeline_output, out_file)
+
+        save_frames(pipeline_output,frame_dir)
+        from animatediff.rife.ffmpeg import (FfmpegEncoder, VideoCodec,
+                                             codec_extn)
+
+        out_file = out_file.with_suffix( f".{codec_extn(output_format)}" )
+
+        logger.info("Creating ffmpeg encoder...")
+        encoder = FfmpegEncoder(
+            frames_dir=frame_dir,
+            out_file=out_file,
+            codec=output_format,
+            in_fps=output_fps,
+            out_fps=output_fps,
+            lossless=False,
+            param= output_map["encode_param"] if "encode_param" in output_map else {}
+        )
+        logger.info("Encoding interpolated frames with ffmpeg...")
+        result = encoder.encode()
+        logger.debug(f"ffmpeg result: {result}")
+
 
     logger.info(f"Saved sample to {out_file}")
     return pipeline_output

@@ -87,6 +87,7 @@ class FfmpegEncoder:
         in_fps: int = 60,
         out_fps: int = 60,
         lossless: bool = False,
+        param={},
     ):
         self.frames_dir = frames_dir
         self.out_file = out_file
@@ -94,6 +95,7 @@ class FfmpegEncoder:
         self.in_fps = in_fps
         self.out_fps = out_fps
         self.lossless = lossless
+        self.param = param
 
         self.input: Optional[InputNode] = None
 
@@ -147,9 +149,15 @@ class FfmpegEncoder:
         stream: FilterNode = self.input
         if self.in_fps != self.out_fps:
             stream = self._interpolate(stream, self.out_fps)
-
+        param = {
+            "pix_fmt":"yuv420p",
+            "vcodec":"libvpx-vp9",
+            "video_bitrate":0,
+            "crf":24,
+        }
+        param.update(**self.param)
         stream = stream.output(
-            self._out_file, pix_fmt="yuv420p", vcodec="libvpx-vp9", video_bitrate=0, crf=24
+            self._out_file, **param
         )
         return stream.run()
 
@@ -159,24 +167,32 @@ class FfmpegEncoder:
             stream = self._interpolate(stream, self.out_fps)
 
         if self.lossless:
+            param = {
+                "pix_fmt":"bgra",
+                "vcodec":"libwebp_anim",
+                "lossless":1,
+                "compression_level":5,
+                "qscale":75,
+                "loop":0,
+            }
+            param.update(**self.param)
             stream = stream.output(
                 self._out_file,
-                pix_fmt="bgra",
-                vcodec="libwebp_anim",
-                lossless=1,
-                compression_level=5,
-                qscale=75,
-                loop=0,
+                **param
             )
         else:
+            param = {
+                "pix_fmt":"yuv420p",
+                "vcodec":"libwebp_anim",
+                "lossless":0,
+                "compression_level":5,
+                "qscale":90,
+                "loop":0,
+            }
+            param.update(**self.param)
             stream = stream.output(
                 self._out_file,
-                pix_fmt="yuv420p",
-                vcodec="libwebp_anim",
-                lossless=0,
-                compression_level=5,
-                qscale=90,
-                loop=0,
+                **param
             )
         return stream.run()
 
@@ -184,8 +200,17 @@ class FfmpegEncoder:
         stream: FilterNode = self.input
         if self.in_fps != self.out_fps:
             stream = self._interpolate(stream, self.out_fps)
+
+        param = {
+            "pix_fmt":"yuv420p",
+            "vcodec":"libx265",
+            "crf":21,
+            "tune":"animation",
+        }
+        param.update(**self.param)
+
         stream = stream.output(
-            self._out_file, pix_fmt="yuv420p", vcodec="libx265", preset="medium", tune="animation"
+            self._out_file, **param
         )
         return stream.run()
 
@@ -193,5 +218,14 @@ class FfmpegEncoder:
         stream: FilterNode = self.input
         if self.in_fps != self.out_fps:
             stream = self._interpolate(stream, self.out_fps)
-        stream = stream.output(self._out_file, pix_fmt="yuv420p", vcodec="libx265", preset="medium")
+
+        param = {
+            "pix_fmt":"yuv420p",
+            "vcodec":"libx265",
+            "crf":21,
+            "tune":"animation",
+        }
+        param.update(**self.param)
+
+        stream = stream.output(self._out_file, **param)
         return stream.run()

@@ -110,6 +110,7 @@ class ModelConfig(BaseSettings):
     controlnet_map: Dict[str,Any]= Field({})
     upscale_config: Dict[str,Any]= Field({})
     result: Dict[str,Any]= Field({})
+    output: Dict[str,Any]= Field({})
 
     class Config(JsonConfig):
         json_config_path: Path

@@ -224,5 +224,12 @@
       "reference_attn": true,
       "reference_adain": false
     }
+  },
+  "output":{
+    "format" : "gif",
+    "fps" : 8,
+    "encode_param":{
+      "crf": 10
+    }
   }
 }

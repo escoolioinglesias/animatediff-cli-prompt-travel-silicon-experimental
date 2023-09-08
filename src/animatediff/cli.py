@@ -388,6 +388,7 @@ def generate(
                 controlnet_ref_map=controlnet_ref_map,
                 no_frames=no_frames,
                 ip_adapter_map=ip_adapter_map,
+                output_map = model_config.output,
             )
             outputs.append(output)
             torch.cuda.empty_cache()
