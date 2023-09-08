@@ -222,6 +222,13 @@ Almost same as the original animatediff-cli, but with a slight change in config 
       "reference_attn": true,       # [attn=true , adain=false] means "reference_only"
       "reference_adain": false
     }
+  },
+  "output":{   # output format 
+    "format" : "gif",   # gif/mp4/webm
+    "fps" : 8,
+    "encode_param":{
+      "crf": 10
+    }
   }
 }
 ```
