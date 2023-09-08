@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Union
 import numpy as np
 import torch
 from controlnet_aux import LineartAnimeDetector
+from controlnet_aux.processor import MODELS
 from controlnet_aux.processor import Processor as ControlnetPreProcessor
 from controlnet_aux.util import HWC3, ade_palette
 from controlnet_aux.util import resize_image as aux_resize_image
@@ -96,6 +97,47 @@ class SegPreProcessor:
 
         return color_seg
 
+class NullPreProcessor:
+    def __call__(self, input_image, **kwargs):
+        return input_image
+
+class BlurPreProcessor:
+    def __call__(self, input_image, sigma=5.0, **kwargs):
+        import cv2
+
+        input_array = np.array(input_image, dtype=np.uint8)
+        input_array = HWC3(input_array)
+
+        dst = cv2.GaussianBlur(input_array, (0, 0), sigma)
+
+        return Image.fromarray(dst)
+
+class TileResamplePreProcessor:
+
+    def resize(self, input_image, resolution):
+        import cv2
+
+        H, W, C = input_image.shape
+        H = float(H)
+        W = float(W)
+        k = float(resolution) / min(H, W)
+        H *= k
+        W *= k
+        img = cv2.resize(input_image, (int(W), int(H)), interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
+        return img
+
+    def __call__(self, input_image, down_sampling_rate = 1.0, **kwargs):
+
+        input_array = np.array(input_image, dtype=np.uint8)
+        input_array = HWC3(input_array)
+
+        H, W, C = input_array.shape
+
+        target_res = min(H,W) / down_sampling_rate
+
+        dst = self.resize(input_array, target_res)
+
+        return Image.fromarray(dst)
 
 
 def create_controlnet_model(type_str):
@@ -130,32 +172,51 @@ def create_controlnet_model(type_str):
     else:
         raise ValueError(f"unknown controlnet type {type_str}")
 
-def get_preprocessor(type_str, device_str):
+
+default_preprocessor_table={
+    "controlnet_lineart_anime":"lineart_anime",
+    "controlnet_openpose":"openpose_full",
+    "controlnet_softedge":"softedge_hedsafe",
+    "controlnet_shuffle":"shuffle",
+    "controlnet_depth":"depth_midas",
+    "controlnet_canny":"canny",
+    "controlnet_lineart":"lineart_realistic",
+    "controlnet_mlsd":"mlsd",
+    "controlnet_normalbae":"normal_bae",
+    "controlnet_scribble":"scribble_pidsafe",
+}
+
+def create_default_preprocessor(type_str):
+    if type_str in default_preprocessor_table:
+        return ControlnetPreProcessor(default_preprocessor_table[type_str])
+    elif type_str == "controlnet_seg":
+        return SegPreProcessor()
+    else:
+        return NullPreProcessor()
+
+def create_preprocessor(preprocessor_map):
+    pre_type = preprocessor_map["type"]
+    if pre_type in MODELS:
+        return ControlnetPreProcessor(pre_type)
+    elif pre_type == "upernet_seg":
+        return SegPreProcessor()
+    elif pre_type == "blur":
+        return BlurPreProcessor()
+    elif pre_type == "tile_resample":
+        return TileResamplePreProcessor()
+    elif pre_type == "none":
+        return NullPreProcessor()
+    else:
+        raise ValueError(f"unknown controlnet preprocessor type {pre_type}")
+
+
+def get_preprocessor(type_str, device_str, preprocessor_map):
     if type_str not in controlnet_preprocessor:
-        if type_str == "controlnet_lineart_anime":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_anime")
-        elif type_str == "controlnet_openpose":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("openpose_full")
-        elif type_str == "controlnet_softedge":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("softedge_hedsafe")
-        elif type_str == "controlnet_shuffle":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("shuffle")
-        elif type_str == "controlnet_depth":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("depth_midas")
-        elif type_str == "controlnet_canny":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("canny")
-        elif type_str == "controlnet_lineart":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("lineart_realistic")
-        elif type_str == "controlnet_mlsd":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("mlsd")
-        elif type_str == "controlnet_normalbae":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("normal_bae")
-        elif type_str == "controlnet_scribble":
-            controlnet_preprocessor[type_str] = ControlnetPreProcessor("scribble_pidsafe")
-        elif type_str == "controlnet_seg":
-            controlnet_preprocessor[type_str] = SegPreProcessor()
-        else:
-            raise ValueError(f"unknown controlnet type {type_str}")
+        if preprocessor_map:
+            controlnet_preprocessor[type_str] = create_preprocessor(preprocessor_map)
+
+        if type_str not in controlnet_preprocessor:
+            controlnet_preprocessor[type_str] = create_default_preprocessor(type_str)
 
         if hasattr(controlnet_preprocessor[type_str], "processor"):
             if hasattr(controlnet_preprocessor[type_str].processor, "to"):
@@ -176,12 +237,14 @@ def clear_controlnet_preprocessor(type_str = None):
         torch.cuda.empty_cache()
 
 
-def get_preprocessed_img(type_str, img, use_preprocessor, device_str):
-    if type_str in ( "controlnet_tile", "controlnet_ip2p", "controlnet_inpaint"):
-        return img
+def get_preprocessed_img(type_str, img, use_preprocessor, device_str, preprocessor_map):
+    if use_preprocessor:
+        param = {}
+        if preprocessor_map:
+            param = preprocessor_map["param"] if "param" in preprocessor_map else {}
+        return get_preprocessor(type_str, device_str, preprocessor_map)(img, **param)
     else:
-        return get_preprocessor(type_str, device_str)(img) if use_preprocessor else img
-
+        return img
 
 
 def create_pipeline(
@@ -460,6 +523,9 @@ def controlnet_preprocess(
 
         if type(item) is dict:
             if item["enable"] == True:
+
+                preprocessor_map = item["preprocessor"] if "preprocessor" in item else {}
+
                 img_dir = c_image_dir.joinpath( c )
                 cond_imgs = sorted(glob.glob( os.path.join(img_dir, "[0-9]*.png"), recursive=False))
                 if len(cond_imgs) > 0:
@@ -479,7 +545,7 @@ def controlnet_preprocess(
                         if frame_no < duration:
                             if frame_no not in controlnet_image_map:
                                 controlnet_image_map[frame_no] = {}
-                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image(img_path, width, height) , use_preprocessor, device_str)
+                            controlnet_image_map[frame_no][c] = get_preprocessed_img( c, get_resized_image2(img_path, 512) , use_preprocessor, device_str, preprocessor_map)
                             processed = True
 
         if save_detectmap and processed:
@@ -500,7 +566,8 @@ def controlnet_preprocess(
         r = controlnet_map["controlnet_ref"]
         if r["enable"] == True:
             org_name = data_dir.joinpath( r["ref_image"]).stem
-            ref_image = get_resized_image( data_dir.joinpath( r["ref_image"] ) , width, height)
+#            ref_image = get_resized_image( data_dir.joinpath( r["ref_image"] ) , width, height)
+            ref_image = get_resized_image2( data_dir.joinpath( r["ref_image"] ) , 512)
 
             if ref_image is not None:
                 controlnet_ref_map = {

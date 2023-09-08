@@ -43,6 +43,11 @@
     "controlnet_tile":{
       "enable": true,
       "use_preprocessor":true,
+      "preprocessor":{
+        "type" : "none",
+        "param":{
+        }
+      },
       "guess_mode":false,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
@@ -79,6 +84,11 @@
     "controlnet_softedge":{
       "enable": true,
       "use_preprocessor":true,
+      "preprocessor":{
+        "type" : "softedge_pidsafe",
+        "param":{
+        }
+      },
       "guess_mode":false,
       "controlnet_conditioning_scale": 1.0,
       "control_guidance_start": 0.0,
