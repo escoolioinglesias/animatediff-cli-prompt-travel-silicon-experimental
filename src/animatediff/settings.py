@@ -104,7 +104,9 @@ class ModelConfig(BaseSettings):
     guidance_scale: float = 7.5  # CFG scale to use
     clip_skip: int = 1  # skip the last N-1 layers of the CLIP text encoder
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
+    head_prompt: str = ""
     prompt_map: Dict[str,str]= Field({})
+    tail_prompt: str = ""
     lora_map: Dict[str,float]= Field({})
     ip_adapter_map: Dict[str,Any]= Field({})
     controlnet_map: Dict[str,Any]= Field({})

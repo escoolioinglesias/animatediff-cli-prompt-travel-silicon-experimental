@@ -328,6 +328,11 @@ def generate(
     for k in model_config.prompt_map.keys():
         model_config.prompt_map[k] = replace_wild_card(model_config.prompt_map[k], wild_card_dir)
 
+    if model_config.head_prompt:
+        model_config.head_prompt = replace_wild_card(model_config.head_prompt, wild_card_dir)
+    if model_config.tail_prompt:
+        model_config.tail_prompt = replace_wild_card(model_config.tail_prompt, wild_card_dir)
+
     # save config to output directory
     logger.info("Saving prompt config to output directory")
     save_config_path = save_dir.joinpath("prompt.json")
@@ -363,7 +368,13 @@ def generate(
             prompt_map = {}
             for k in model_config.prompt_map.keys():
                 if int(k) < length:
-                    prompt_map[int(k)]=model_config.prompt_map[k]
+                    pr = model_config.prompt_map[k]
+                    if model_config.head_prompt:
+                        pr = model_config.head_prompt + "," + pr
+                    if model_config.tail_prompt:
+                        pr = pr + "," + model_config.tail_prompt
+
+                    prompt_map[int(k)]=pr
 
             output = run_inference(
                 pipeline=pipeline,
@@ -613,7 +624,13 @@ def tile_upscale(
         prompt_map = {}
         for k in model_config.prompt_map.keys():
             if int(k) < length:
-                prompt_map[int(k)]=model_config.prompt_map[k]
+                pr = model_config.prompt_map[k]
+                if model_config.head_prompt:
+                    pr = model_config.head_prompt + "," + pr
+                if model_config.tail_prompt:
+                    pr = pr + "," + model_config.tail_prompt
+
+                prompt_map[int(k)]=pr
 
         if model_config.upscale_config:
 
