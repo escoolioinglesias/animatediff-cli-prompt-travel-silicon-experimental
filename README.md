@@ -81,12 +81,14 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "steps": 40,
   "guidance_scale": 20,     # cfg scale
   "clip_skip": 2,
-  "prompt_map": {           # "FRAME" : "PROMPT" format
-    "0":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,smile standing, clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
-    "32":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((walking))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
-    "64":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((running))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:2.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear,wide angle lens, fish eye effect",
-    "96":  "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo,(((sitting))), clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,((spider webs:1.0)), storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear"
+  "head_prompt": "masterpiece, best quality, a beautiful and detailed portriat of muffet, monster girl,((purple body:1.3)),humanoid, arachnid, anthro,((fangs)),pigtails,hair bows,5 eyes,spider girl,6 arms,solo",
+  "prompt_map": {           # "FRAME" : "PROMPT" format / ex. prompt for frame 32 is "head_prompt" + prompt_map["32"] + "tail_prompt"
+    "0":  "smile standing,((spider webs:1.0))",
+    "32":  "(((walking))),((spider webs:1.0))",
+    "64":  "(((running))),((spider webs:2.0)),wide angle lens, fish eye effect",
+    "96":  "(((sitting))),((spider webs:1.0))"
   },
+  "tail_prompt": "clothed, open mouth, awesome and detailed background, holding teapot, holding teacup, 6 hands,detailed hands,storefront that sells pastries and tea,bloomers,(red and black clothing),inside,pouring into teacup,muffetwear",
   "n_prompt": [
     "(worst quality, low quality:1.4),nudity,simple background,border,mouth closed,text, patreon,bed,bedroom,white background,((monochrome)),sketch,(pink body:1.4),7 arms,8 arms,4 arms"
   ],
