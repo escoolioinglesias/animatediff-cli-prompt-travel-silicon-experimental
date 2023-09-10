@@ -7,7 +7,7 @@ I added a experimental feature to animatediff-cli to change the prompt in the mi
 It seems to work surprisingly well!
 
 ### Example
-- [A command to automate video stylization has been added](https://github.com/s9roll7/animatediff-cli-prompt-trave#video-stylization).
+- [A command to automate video stylization has been added](https://github.com/s9roll7/animatediff-cli-prompt-travel#video-stylization).
 - Original / First generation result / Second generation(for upscaling) result
 - It took 4 minutes to generate the first one and about 5 minutes to generate the second one (on rtx 4090).
 
