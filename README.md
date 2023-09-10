@@ -61,6 +61,9 @@ venv\Scripts\activate.bat
 python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 python -m pip install -e .
 python -m pip install xformers
+
+# If you want to use the 'stylize' command, you will also need
+python -m pip install -e .[stylize]
 ```
 (https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)
 
