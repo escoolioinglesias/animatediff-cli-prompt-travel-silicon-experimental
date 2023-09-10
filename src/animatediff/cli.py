@@ -14,7 +14,8 @@ from rich.logging import RichHandler
 from animatediff import __version__, console, get_dir
 from animatediff.generate import (controlnet_preprocess, create_pipeline,
                                   create_us_pipeline, ip_adapter_preprocess,
-                                  run_inference, run_upscale)
+                                  load_controlnet_models, run_inference,
+                                  run_upscale, unload_controlnet_models)
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
 from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
                                   ModelConfig, get_infer_config,
@@ -22,8 +23,8 @@ from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
 from animatediff.utils.civitai2config import generate_config_from_civitai_info
 from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
-from animatediff.utils.util import (path_from_cwd, save_frames, save_imgs,
-                                    save_video)
+from animatediff.utils.util import (extract_frames, path_from_cwd, save_frames,
+                                    save_imgs, save_video)
 from animatediff.utils.wild_card import replace_wild_card
 
 cli: typer.Typer = typer.Typer(
@@ -74,8 +75,16 @@ except ImportError:
     logger.debug("RIFE not available, skipping...", exc_info=True)
     rife_app = None
 
+
+from animatediff.stylize import stylize
+
+cli.add_typer(stylize, name="stylize")
+
+
+
+
 # mildly cursed globals to allow for reuse of the pipeline if we're being called as a module
-pipeline: Optional[AnimationPipeline] = None
+g_pipeline: Optional[AnimationPipeline] = None
 last_model_path: Optional[Path] = None
 
 
@@ -291,10 +300,10 @@ def generate(
     ip_adapter_map = ip_adapter_preprocess(model_config.ip_adapter_map, width, height, length, save_dir)
 
     # beware the pipeline
-    global pipeline
+    global g_pipeline
     global last_model_path
-    if pipeline is None or last_model_path != model_config.path.resolve():
-        pipeline = create_pipeline(
+    if g_pipeline is None or last_model_path != model_config.path.resolve():
+        g_pipeline = create_pipeline(
             base_model=base_model_path,
             model_config=model_config,
             infer_config=infer_config,
@@ -305,13 +314,15 @@ def generate(
         logger.info("Pipeline already loaded, skipping initialization")
         # reload TIs; create_pipeline does this for us, but they may have changed
         # since load time if we're being called from another package
-        load_text_embeddings(pipeline)
+        load_text_embeddings(g_pipeline)
 
-    if pipeline.device == device:
+    load_controlnet_models(pipe=g_pipeline, model_config=model_config)
+
+    if g_pipeline.device == device:
         logger.info("Pipeline already on the correct device, skipping device transfer")
     else:
-        pipeline = send_to_device(
-            pipeline, device, freeze=True, force_half=force_half_vae, compile=model_config.compile
+        g_pipeline = send_to_device(
+            g_pipeline, device, freeze=True, force_half=force_half_vae, compile=model_config.compile
         )
 
     # save raw config to output directory
@@ -377,7 +388,7 @@ def generate(
                     prompt_map[int(k)]=pr
 
             output = run_inference(
-                pipeline=pipeline,
+                pipeline=g_pipeline,
                 prompt="this is dummy string",
                 n_prompt=n_prompt,
                 seed=seed,
@@ -406,6 +417,9 @@ def generate(
 
             # increment the generation number
             gen_num += 1
+
+    unload_controlnet_models(pipe=g_pipeline)
+
 
     logger.info("Generation complete!")
     if save_merged:
@@ -784,5 +798,5 @@ def merge(
         else:
             # we haven't, so convert it
             logger.info("Converting checkpoint to HuggingFace pipeline...")
-            pipeline, model_dir = checkpoint_to_pipeline(checkpoint)
+            g_pipeline, model_dir = checkpoint_to_pipeline(checkpoint)
     logger.info("Done!")

@@ -1686,6 +1686,45 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             torch.cuda.empty_cache()
 
 
+    def unload_controlnet_ref_only(
+        self,
+        reference_attn,
+        reference_adain,
+    ):
+        if reference_attn:
+            attn_modules = [module for module in torch_dfs(self.unet) if isinstance(module, BasicTransformerBlock)]
+            attn_modules = sorted(attn_modules, key=lambda x: -x.norm1.normalized_shape[0])
+
+            for i, module in enumerate(attn_modules):
+                module.forward = module._original_inner_forward
+                module.bank = []
+
+            attn_modules = None
+            torch.cuda.empty_cache()
+
+        if reference_adain:
+            gn_modules = [self.unet.mid_block]
+            self.unet.mid_block.gn_weight = 0
+
+            down_blocks = self.unet.down_blocks
+            for w, module in enumerate(down_blocks):
+                module.gn_weight = 1.0 - float(w) / float(len(down_blocks))
+                gn_modules.append(module)
+
+            up_blocks = self.unet.up_blocks
+            for w, module in enumerate(up_blocks):
+                module.gn_weight = float(w) / float(len(up_blocks))
+                gn_modules.append(module)
+
+            for i, module in enumerate(gn_modules):
+                module.forward = module.original_forward
+                module.mean_bank = []
+                module.var_bank = []
+                module.gn_weight *= 2
+
+            gn_modules = None
+            torch.cuda.empty_cache()
+
 
     @torch.no_grad()
     def __call__(
@@ -2346,6 +2385,19 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                         callback(i, t, latents)
 
                 stopwatch_stop("LOOP end")
+
+        if c_ref_enable:
+            self.unload_controlnet_ref_only(
+                reference_attn=controlnet_ref_map["reference_attn"],
+                reference_adain=controlnet_ref_map["reference_adain"],
+            )
+
+        if self.ip_adapter:
+            show_gpu("before unload ip_adapter")
+            self.ip_adapter.unload()
+            self.ip_adapter = None
+            torch.cuda.empty_cache()
+            show_gpu("after unload ip_adapter")
 
         # Return latents if requested (this will never be a dict)
         if not output_type == "latent":

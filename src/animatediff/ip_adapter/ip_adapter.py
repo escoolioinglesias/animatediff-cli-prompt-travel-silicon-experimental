@@ -84,6 +84,7 @@ class IPAdapter:
                 attn_procs[name] = IPAttnProcessor(hidden_size=hidden_size, cross_attention_dim=cross_attention_dim,
                 scale=1.0).to(self.device, dtype=torch.float16)
         unet.set_attn_processor(attn_procs)
+    
 
     def load_ip_adapter(self):
         state_dict = torch.load(self.ip_ckpt, map_location="cpu")
@@ -110,6 +111,14 @@ class IPAdapter:
         for attn_processor in self.pipe.unet.attn_processors.values():
             if isinstance(attn_processor, IPAttnProcessor):
                 attn_processor.text_context_len = text_length
+
+    def unload(self):
+        unet = self.pipe.unet
+        attn_procs = {}
+        for name in unet.attn_processors.keys():
+            attn_procs[name] = AttnProcessor()
+        unet.set_attn_processor(attn_procs)
+
 
     def generate(
         self,

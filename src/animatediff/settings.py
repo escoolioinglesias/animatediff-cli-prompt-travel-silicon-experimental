@@ -103,16 +103,17 @@ class ModelConfig(BaseSettings):
     steps: int = 25  # Number of inference steps to run
     guidance_scale: float = 7.5  # CFG scale to use
     clip_skip: int = 1  # skip the last N-1 layers of the CLIP text encoder
-    n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
     head_prompt: str = ""
     prompt_map: Dict[str,str]= Field({})
     tail_prompt: str = ""
+    n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
     lora_map: Dict[str,float]= Field({})
     ip_adapter_map: Dict[str,Any]= Field({})
     controlnet_map: Dict[str,Any]= Field({})
     upscale_config: Dict[str,Any]= Field({})
-    result: Dict[str,Any]= Field({})
+    stylize_config: Dict[str,Any]= Field({})
     output: Dict[str,Any]= Field({})
+    result: Dict[str,Any]= Field({})
 
     class Config(JsonConfig):
         json_config_path: Path

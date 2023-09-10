@@ -335,6 +335,24 @@ def create_pipeline(
             logger.info(f"alpha = {model_config.lora_map[l]}")
             load_safetensors_lora(text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
 
+
+    logger.info("Creating AnimationPipeline...")
+    pipeline = AnimationPipeline(
+        vae=vae,
+        text_encoder=text_encoder,
+        tokenizer=tokenizer,
+        unet=unet,
+        scheduler=scheduler,
+        feature_extractor=feature_extractor,
+        controlnet_map=None,
+    )
+
+    # Load TI embeddings
+    load_text_embeddings(pipeline)
+
+    return pipeline
+
+def load_controlnet_models(pipe: AnimationPipeline, model_config: ModelConfig = ...,):
     # controlnet
     controlnet_map={}
     if model_config.controlnet_map:
@@ -353,21 +371,15 @@ def create_pipeline(
     if not controlnet_map:
         controlnet_map = None
 
-    logger.info("Creating AnimationPipeline...")
-    pipeline = AnimationPipeline(
-        vae=vae,
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        unet=unet,
-        scheduler=scheduler,
-        feature_extractor=feature_extractor,
-        controlnet_map=controlnet_map,
-    )
+    pipe.controlnet_map = controlnet_map
 
-    # Load TI embeddings
-    load_text_embeddings(pipeline)
+def unload_controlnet_models(pipe: AnimationPipeline):
+    from animatediff.utils.util import show_gpu
+    show_gpu("before uload controlnet")
+    pipe.controlnet_map = None
+    torch.cuda.empty_cache()
+    show_gpu("after unload controlnet")
 
-    return pipeline
 
 def create_us_pipeline(
     model_config: ModelConfig = ...,
@@ -551,7 +563,7 @@ def controlnet_preprocess(
         if save_detectmap and processed:
             det_dir = out_dir.joinpath(f"{0:02d}_detectmap/{c}")
             det_dir.mkdir(parents=True, exist_ok=True)
-            for frame_no in controlnet_image_map:
+            for frame_no in tqdm(controlnet_image_map, desc=f"Saving Preprocessed images ({c})"):
                 save_path = det_dir.joinpath(f"{frame_no:08d}.png")
                 if c in controlnet_image_map[frame_no]:
                     controlnet_image_map[frame_no][c].save(save_path)
@@ -613,7 +625,7 @@ def ip_adapter_preprocess(
                 ip_adapter_map["is_plus"] = ip_adapter_config_map["is_plus"]
                 ip_adapter_map["is_plus_face"] = ip_adapter_config_map["is_plus_face"] if "is_plus_face" in ip_adapter_config_map else False
                 ip_adapter_map["images"] = {}
-                for img_path in imgs:
+                for img_path in tqdm(imgs, desc=f"Preprocessing images (ip_adapter)"):
                     frame_no = int(Path(img_path).stem)
                     if frame_no < duration:
                         if resized_to_square:
@@ -625,7 +637,7 @@ def ip_adapter_preprocess(
             if (ip_adapter_config_map["save_input_image"] == True) and processed:
                 det_dir = out_dir.joinpath(f"{0:02d}_ip_adapter/")
                 det_dir.mkdir(parents=True, exist_ok=True)
-                for frame_no in ip_adapter_map["images"]:
+                for frame_no in tqdm(ip_adapter_map["images"], desc=f"Saving Preprocessed images (ip_adapter)"):
                     save_path = det_dir.joinpath(f"{frame_no:08d}.png")
                     ip_adapter_map["images"][frame_no].save(save_path)
 

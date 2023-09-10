@@ -188,3 +188,43 @@ def prepare_ip_adapter():
         hf_hub_download(
             repo_id="h94/IP-Adapter", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/ip_adapter"
         )
+
+
+def prepare_wd14tagger():
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/WD14tagger", exist_ok=True)
+    for hub_file in [
+        "model.onnx",
+        "selected_tags.csv",
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/WD14tagger" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="SmilingWolf/wd-v1-4-moat-tagger-v2", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/WD14tagger"
+        )
+
+
+
+def extract_frames(movie_file_path, fps, out_dir):
+    import ffmpeg
+
+    ffmpeg.input(
+                    str(movie_file_path.resolve())
+                ).filter(
+                    "fps",
+                    fps=fps
+                ).output(
+                    str(out_dir.resolve().joinpath("%08d.png")),
+                    start_number=0
+                ).overwrite_output(
+                ).run(quiet=True)
+
