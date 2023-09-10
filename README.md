@@ -7,6 +7,12 @@ I added a experimental feature to animatediff-cli to change the prompt in the mi
 It seems to work surprisingly well!
 
 ### Example
+- [A command to automate video stylization has been added](https://github.com/s9roll7/animatediff-cli-prompt-trave#video-stylization).
+- Original / First generation result / Second generation(for upscaling) result
+- It took 4 minutes to generate the first one and about 5 minutes to generate the second one (on rtx 4090).
+
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/2f1965f2-9a50-485e-ac95-e888a3189ba2" muted="false"></video></div>
+<br>
 
 - Numbered from left to right.
 - 1.prompt + lora
@@ -254,6 +260,25 @@ animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L 128 -
 # here, width=512 is specified, but even if the original size is 512, it is effective in increasing detail
 animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512
 ```
+
+#### Video Stylization
+```sh
+cd animatediff-cli
+venv\Scripts\activate.bat
+
+# If you want to use the 'stylize' command, additional installation required
+python -m pip install -e .[stylize]
+
+# create config file from src video
+animatediff stylize create-config YOUR_SRC_MOVIE_FILE.mp4
+
+# Edit the config file by referring to the hint displayed in the log when the command finishes
+# It is recommended to rewrite length to 16 to test run
+
+# generate
+animatediff stylize generate STYLYZE_DIR
+```
+
 
 #### Auto config generation for [Stable-Diffusion-Webui-Civitai-Helper](https://github.com/butaixianran/Stable-Diffusion-Webui-Civitai-Helper) user
 ```sh
