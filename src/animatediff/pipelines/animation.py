@@ -1337,7 +1337,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                         hidden_states,
                         temb,
                         encoder_hidden_states=encoder_hidden_states,
-                        encoder_attention_mask=encoder_attention_mask,
                     )
                 hidden_states = resnet(hidden_states, temb)
 
