@@ -35,7 +35,8 @@ from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
 from animatediff.utils.util import (get_resized_image, get_resized_image2,
                                     get_resized_images, prepare_ip_adapter,
-                                    save_frames, save_video)
+                                    prepare_motion_module, save_frames,
+                                    save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -260,14 +261,16 @@ def create_pipeline(
     logger.info("Checking motion module...")
     motion_module = data_dir.joinpath(model_config.motion_module)
     if not (motion_module.exists() and motion_module.is_file()):
-        # check for safetensors version
-        motion_module = motion_module.with_suffix(".safetensors")
+        prepare_motion_module()
         if not (motion_module.exists() and motion_module.is_file()):
-            # download from HuggingFace Hub if not found
-            ensure_motion_modules()
-        if not (motion_module.exists() and motion_module.is_file()):
-            # this should never happen, but just in case...
-            raise FileNotFoundError(f"Motion module {motion_module} does not exist or is not a file!")
+            # check for safetensors version
+            motion_module = motion_module.with_suffix(".safetensors")
+            if not (motion_module.exists() and motion_module.is_file()):
+                # download from HuggingFace Hub if not found
+                ensure_motion_modules()
+            if not (motion_module.exists() and motion_module.is_file()):
+                # this should never happen, but just in case...
+                raise FileNotFoundError(f"Motion module {motion_module} does not exist or is not a file!")
 
     logger.info("Loading tokenizer...")
     tokenizer: CLIPTokenizer = CLIPTokenizer.from_pretrained(base_model, subfolder="tokenizer")

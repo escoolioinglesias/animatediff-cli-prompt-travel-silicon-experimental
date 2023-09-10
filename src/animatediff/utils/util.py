@@ -189,6 +189,26 @@ def prepare_ip_adapter():
             repo_id="h94/IP-Adapter", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/ip_adapter"
         )
 
+def prepare_motion_module():
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/motion-module", exist_ok=True)
+    for hub_file in [
+        "mm_sd_v15_v2.ckpt",
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/motion-module" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="guoyww/animatediff", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/motion-module"
+        )
 
 def prepare_wd14tagger():
     import os

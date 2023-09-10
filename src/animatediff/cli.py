@@ -277,7 +277,7 @@ def generate(
     config_path = config_path.absolute()
     logger.info(f"Using generation config: {path_from_cwd(config_path)}")
     model_config: ModelConfig = get_model_config(config_path)
-    infer_config: InferenceConfig = get_infer_config()
+    infer_config: InferenceConfig = get_infer_config(model_config.motion_module)
 
     # set sane defaults for context, overlap, and stride if not supplied
     context, overlap, stride = get_context_params(length, context, overlap, stride)
@@ -544,7 +544,7 @@ def tile_upscale(
     config_path = config_path.absolute()
     logger.info(f"Using generation config: {path_from_cwd(config_path)}")
     model_config: ModelConfig = get_model_config(config_path)
-    infer_config: InferenceConfig = get_infer_config()
+    infer_config: InferenceConfig = get_infer_config(model_config.motion_module)
     frames_dir = frames_dir.absolute()
 
     # turn the device string into a torch.device

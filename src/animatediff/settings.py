@@ -87,8 +87,10 @@ class InferenceConfig(BaseSettings):
 
 @lru_cache(maxsize=2)
 def get_infer_config(
-    config_path: Path = get_dir("config").joinpath("inference/default.json"),
+    motion_module_path:Path,
 ) -> InferenceConfig:
+    v2 = (motion_module_path.stem in ["mm_sd_v15_v2"] )     # TODO Decent identification method
+    config_path: Path = get_dir("config").joinpath("inference/default.json" if not v2 else "inference/motion_v2.json")
     settings = InferenceConfig(json_config_path=config_path)
     return settings
 
