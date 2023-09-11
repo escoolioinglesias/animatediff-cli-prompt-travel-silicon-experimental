@@ -78,6 +78,26 @@ def create_config(
             help="fps",
         ),
     ] = 8,
+    duration: Annotated[
+        int,
+        typer.Option(
+            "--duration",
+            "-d",
+            min=-1,
+            max=3600,
+            help="Video duration in seconds. -1 means that the duration of the input video is used as is",
+        ),
+    ] = -1,
+    aspect_ratio: Annotated[
+        float,
+        typer.Option(
+            "--aspect-ratio",
+            "-a",
+            min=-1,
+            max=5.0,
+            help="aspect ratio (width / height). (ex. 512 / 512 = 1.0 , 512 / 768 = 0.6666 , 768 / 512 = 1.5) -1 means that the aspect ratio of the input video is used as is.",
+        ),
+    ] = -1,
     predicte_interval: Annotated[
         int,
         typer.Option(
@@ -112,7 +132,7 @@ def create_config(
         bool,
         typer.Option(
             "--confidence-format",
-            "-c",
+            "-cf",
             is_flag=True,
             help="confidence token format or not",
         ),
@@ -121,7 +141,7 @@ def create_config(
         bool,
         typer.Option(
             "--danbooru-format",
-            "-d",
+            "-df",
             is_flag=True,
             help="danbooru token format or not",
         ),
@@ -133,6 +153,8 @@ def create_config(
     logger.info(f"{ignore_list=}")
     logger.info(f"{out_dir=}")
     logger.info(f"{fps=}")
+    logger.info(f"{duration=}")
+    logger.info(f"{aspect_ratio=}")
     logger.info(f"{predicte_interval=}")
     logger.info(f"{general_threshold=}")
     logger.info(f"{character_threshold=}")
@@ -154,7 +176,7 @@ def create_config(
         c_dir = controlnet_img_dir.joinpath(c)
         c_dir.mkdir(parents=True, exist_ok=True)
 
-    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"))
+    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"), aspect_ratio, duration)
 
     shutil.copytree(controlnet_img_dir.joinpath("controlnet_tile"), controlnet_img_dir.joinpath("controlnet_ip2p"), dirs_exist_ok=True)
 
@@ -310,6 +332,8 @@ def generate(
 
 #    g_pipeline = None
     torch.cuda.empty_cache()
+
+#    model_config.seed[0] = torch.seed()
 
 
     controlnet_img_dir = stylize_dir.joinpath("01_controlnet_image")

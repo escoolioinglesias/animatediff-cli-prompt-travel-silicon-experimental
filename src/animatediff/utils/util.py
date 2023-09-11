@@ -234,19 +234,42 @@ def prepare_wd14tagger():
 
 
 
-def extract_frames(movie_file_path, fps, out_dir):
+def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration):
     import ffmpeg
 
-    ffmpeg.input(
-                    str(movie_file_path.resolve())
-                ).filter(
-                    "fps",
-                    fps=fps
-                ).output(
-                    str(out_dir.resolve().joinpath("%08d.png")),
-                    start_number=0
-                ).overwrite_output(
-                ).run(quiet=True)
+    probe = ffmpeg.probe(movie_file_path)
+    video = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+    width = int(video['width'])
+    height = int(video['height'])
+
+    node = ffmpeg.input( str(movie_file_path.resolve()) )
+
+    node = node.filter( "fps", fps=fps )
+
+    if duration > 0:
+        node = node.trim(duration=duration)
+
+    if aspect_ratio > 0:
+        # aspect ratio (width / height)
+        ww = round(height * aspect_ratio)
+        if ww < width:
+            x= (width - ww)//2
+            y= 0
+            w = ww
+            h = height
+        else:
+            hh = round(width/aspect_ratio)
+            x = 0
+            y = (height - hh)//2
+            w = width
+            h = hh
+        logger.info(f"crop to {w=},{h=}")
+        node = node.crop(x, y, w, h)
+
+    node = node.output( str(out_dir.resolve().joinpath("%08d.png")), start_number=0 )
+
+    node.run(quiet=True, overwrite_output=True)
+
 
 
 def is_v2_motion_module(motion_module_path:Path):
