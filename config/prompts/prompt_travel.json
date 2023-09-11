@@ -1,7 +1,7 @@
 {
   "name": "sample",
   "path": "share/Stable-diffusion/mistoonAnime_v20.safetensors",
-  "motion_module": "models/motion-module/mm_sd_v15_v2.ckpt",
+  "motion_module": "models/motion-module/mm_sd_v14.ckpt",
   "compile": false,
   "seed": [
     341774366206100

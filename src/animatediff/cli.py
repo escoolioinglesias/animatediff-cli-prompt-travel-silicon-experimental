@@ -23,8 +23,9 @@ from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
 from animatediff.utils.civitai2config import generate_config_from_civitai_info
 from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
-from animatediff.utils.util import (extract_frames, path_from_cwd, save_frames,
-                                    save_imgs, save_video)
+from animatediff.utils.util import (extract_frames, is_v2_motion_module,
+                                    path_from_cwd, save_frames, save_imgs,
+                                    save_video)
 from animatediff.utils.wild_card import replace_wild_card
 
 cli: typer.Typer = typer.Typer(
@@ -157,8 +158,8 @@ def generate(
             "--context",
             "-C",
             min=1,
-            max=24,
-            help="Number of frames to condition on (default: max of <length> or 24)",
+            max=32,
+            help="Number of frames to condition on (default: max of <length> or 32). max for motion module v1 is 24",
             show_default=False,
             rich_help_panel="Generation",
         ),
@@ -277,10 +278,15 @@ def generate(
     config_path = config_path.absolute()
     logger.info(f"Using generation config: {path_from_cwd(config_path)}")
     model_config: ModelConfig = get_model_config(config_path)
-    infer_config: InferenceConfig = get_infer_config(model_config.motion_module)
+    is_v2 = is_v2_motion_module(model_config.motion_module)
+    infer_config: InferenceConfig = get_infer_config(is_v2)
 
     # set sane defaults for context, overlap, and stride if not supplied
     context, overlap, stride = get_context_params(length, context, overlap, stride)
+
+    if (not is_v2) and (context > 24):
+        logger.warning( "For motion module v1, the maximum value of context is 24. Set to 24" )
+        context = 24
 
     # turn the device string into a torch.device
     device: torch.device = torch.device(device)
@@ -544,7 +550,7 @@ def tile_upscale(
     config_path = config_path.absolute()
     logger.info(f"Using generation config: {path_from_cwd(config_path)}")
     model_config: ModelConfig = get_model_config(config_path)
-    infer_config: InferenceConfig = get_infer_config(model_config.motion_module)
+    infer_config: InferenceConfig = get_infer_config(is_v2_motion_module(model_config.motion_module))
     frames_dir = frames_dir.absolute()
 
     # turn the device string into a torch.device

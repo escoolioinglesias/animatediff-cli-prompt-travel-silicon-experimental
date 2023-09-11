@@ -248,3 +248,6 @@ def extract_frames(movie_file_path, fps, out_dir):
                 ).overwrite_output(
                 ).run(quiet=True)
 
+
+def is_v2_motion_module(motion_module_path:Path):
+    return (motion_module_path.stem in ["mm_sd_v15_v2"] )     # TODO Decent identification method
