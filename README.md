@@ -273,7 +273,10 @@ python -m pip install -e .[stylize]
 animatediff stylize create-config YOUR_SRC_MOVIE_FILE.mp4
 
 # Edit the config file by referring to the hint displayed in the log when the command finishes
-# It is recommended to rewrite length to 16 to test run
+# It is recommended to specify a short length for the test run
+
+# generate(test run)
+animatediff stylize generate STYLYZE_DIR -L 16
 
 # generate
 animatediff stylize generate STYLYZE_DIR
