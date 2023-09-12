@@ -306,6 +306,17 @@ def generate(
         Path,
         typer.Argument(path_type=Path, file_okay=False, dir_okay=True, exists=True, help="Path to stylize dir"),
     ] = ...,
+    length: Annotated[
+        int,
+        typer.Option(
+            "--length",
+            "-L",
+            min=-1,
+            max=9999,
+            help="Number of frames to generate. -1 means that the value in the config file is referenced.",
+            rich_help_panel="Generation",
+        ),
+    ] = -1,
 ):
     global g_pipeline
     from animatediff.cli import g_pipeline, generate
@@ -313,6 +324,11 @@ def generate(
     config_org = stylize_dir.joinpath("prompt.json")
 
     model_config: ModelConfig = get_model_config(config_org)
+
+    if length > 0:
+        model_config.stylize_config["0"]["length"] = min(model_config.stylize_config["0"]["length"], length)
+        if "1" in model_config.stylize_config:
+            model_config.stylize_config["1"]["length"] = min(model_config.stylize_config["1"]["length"], length)
 
     output_0_dir = generate(
         config_path=config_org,
