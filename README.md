@@ -10,6 +10,7 @@ It seems to work surprisingly well!
 - [A command to automate video stylization has been added](https://github.com/s9roll7/animatediff-cli-prompt-travel#video-stylization).
 - Original / First generation result / Second generation(for upscaling) result
 - It took 4 minutes to generate the first one and about 5 minutes to generate the second one (on rtx 4090).
+- more example [here](https://github.com/s9roll7/animatediff-cli-prompt-travel/issues/29)
 
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/2f1965f2-9a50-485e-ac95-e888a3189ba2" muted="false"></video></div>
 <br>
