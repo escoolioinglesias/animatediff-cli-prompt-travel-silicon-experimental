@@ -260,6 +260,12 @@ animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L 128 -
 # default config path is 'frames_dir/../prompt.json'
 # here, width=512 is specified, but even if the original size is 512, it is effective in increasing detail
 animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt_travel.json -W 512
+
+# upscale width to 768 (smoother than tile-upscale)
+animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -W 768
+
+# change lora and prompt to make minor changes to the video.
+animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/some_minor_changed.json
 ```
 
 #### Video Stylization
