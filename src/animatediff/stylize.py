@@ -278,7 +278,8 @@ def create_config(
                 "control_scale_list":[]
             },
             "ip_adapter": False,
-            "reference": False
+            "reference": False,
+            "interpolation_multiplier": 1
         }
     }
 
@@ -318,8 +319,10 @@ def generate(
         ),
     ] = -1,
 ):
-    global g_pipeline
-    from animatediff.cli import g_pipeline, generate
+    from animatediff.cli import generate
+
+    time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
 
     config_org = stylize_dir.joinpath("prompt.json")
 
@@ -338,7 +341,13 @@ def generate(
         context=model_config.stylize_config["0"]["context"],
         overlap=model_config.stylize_config["0"]["overlap"],
         stride=model_config.stylize_config["0"]["stride"],
+        out_dir=stylize_dir
     )
+
+    torch.cuda.empty_cache()
+
+    output_0_dir = output_0_dir.rename(output_0_dir.parent / f"{time_str}_{0:02d}")
+
 
     if "1" not in model_config.stylize_config:
         logger.info(f"Stylized results are output to {output_0_dir}")
@@ -346,10 +355,28 @@ def generate(
 
     logger.info(f"Intermediate files have been output to {output_0_dir}")
 
-#    g_pipeline = None
-    torch.cuda.empty_cache()
+    output_0_img_dir = glob.glob( os.path.join(output_0_dir, "00-[0-9]*"), recursive=False)[0]
 
-#    model_config.seed[0] = torch.seed()
+    interpolation_multiplier = 1
+    if "interpolation_multiplier" in model_config.stylize_config["1"]:
+        interpolation_multiplier = model_config.stylize_config["1"]["interpolation_multiplier"]
+
+    if interpolation_multiplier > 1:
+        from animatediff.rife.rife import rife_interpolate
+
+        rife_img_dir = stylize_dir.joinpath(f"{1:02d}_rife_frame")
+        shutil.rmtree(rife_img_dir)
+        rife_img_dir.mkdir(parents=True, exist_ok=True)
+
+        rife_interpolate(output_0_img_dir, rife_img_dir, interpolation_multiplier)
+        model_config.stylize_config["1"]["length"] *= interpolation_multiplier
+
+        if model_config.output:
+            model_config.output["fps"] *= interpolation_multiplier
+        if model_config.prompt_map:
+            model_config.prompt_map = { str(int(i)*interpolation_multiplier): model_config.prompt_map[i] for i in model_config.prompt_map }
+
+        output_0_img_dir = rife_img_dir
 
 
     controlnet_img_dir = stylize_dir.joinpath("01_controlnet_image")
@@ -357,8 +384,6 @@ def generate(
     for c in ["controlnet_canny","controlnet_depth","controlnet_inpaint","controlnet_ip2p","controlnet_lineart","controlnet_lineart_anime","controlnet_mlsd","controlnet_normalbae","controlnet_openpose","controlnet_scribble","controlnet_seg","controlnet_shuffle","controlnet_softedge","controlnet_tile"]:
         c_dir = controlnet_img_dir.joinpath(c)
         c_dir.mkdir(parents=True, exist_ok=True)
-
-    output_0_img_dir = glob.glob( os.path.join(output_0_dir, "00-[0-9]*"), recursive=False)[0]
 
 
     ip2p_for_upscale = model_config.stylize_config["1"]["controlnet_ip2p"]["enable"]
@@ -391,6 +416,9 @@ def generate(
         context=model_config.stylize_config["1"]["context"],
         overlap=model_config.stylize_config["1"]["overlap"],
         stride=model_config.stylize_config["1"]["stride"],
+        out_dir=stylize_dir
     )
+
+    output_1_dir = output_1_dir.rename(output_1_dir.parent / f"{time_str}_{1:02d}")
 
     logger.info(f"Stylized results are output to {output_1_dir}")

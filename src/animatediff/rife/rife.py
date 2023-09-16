@@ -24,6 +24,56 @@ app: typer.Typer = typer.Typer(
     help="RIFE motion flow interpolation (MORE FPS!)",
 )
 
+def rife_interpolate(
+        input_frames_dir:str,
+        output_frames_dir:str,
+        frame_multiplier:int = 2,
+        rife_model:str = "rife-v4.6",
+        spatial_tta:bool = False,
+        temporal_tta:bool = False,
+        uhd:bool = False,
+):
+
+    rife_model_dir = rife_dir.joinpath(rife_model)
+    if not rife_model_dir.joinpath("flownet.bin").exists():
+        raise FileNotFoundError(f"RIFE model dir {rife_model_dir} does not have a model in it!")
+
+
+    rife_opts = RifeNCNNOptions(
+        model_path=rife_model_dir,
+        input_path=input_frames_dir,
+        output_path=output_frames_dir,
+        time_step=1 / frame_multiplier,
+        spatial_tta=spatial_tta,
+        temporal_tta=temporal_tta,
+        uhd=uhd,
+    )
+    rife_args = rife_opts.get_args(frame_multiplier=frame_multiplier)
+
+    # actually run RIFE
+    logger.info("Running RIFE, this may take a little while...")
+    with subprocess.Popen(
+        [rife_ncnn_vulkan, *rife_args], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ) as proc:
+        errs = []
+        for line in proc.stderr:
+            line = line.decode("utf-8").strip()
+            if line:
+                logger.debug(line)
+        stdout, _ = proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"RIFE failed with code {proc.returncode}:\n" + "\n".join(errs))
+
+    import glob
+    import os
+    org_images = sorted(glob.glob( os.path.join(output_frames_dir, "[0-9]*.png"), recursive=False))
+    for o in org_images:
+        p = Path(o)
+        new_no = int(p.stem) - 1
+        new_p = p.with_stem(f"{new_no:08d}")
+        p.rename(new_p)
+
+
 
 @app.command(no_args_is_help=True)
 def interpolate(

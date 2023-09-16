@@ -632,6 +632,8 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
             for image_ in image:
                 self.check_image(image_, prompt, prompt_embeds)
         else:
+            if self.controlnet == None:
+                return
             assert False
 
         # Check `controlnet_conditioning_scale`
@@ -1006,17 +1008,20 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
 
-        controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
+        if self.controlnet == None:
+            pass
+        else:
+            controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
 
-        if isinstance(controlnet, MultiControlNetModel) and isinstance(controlnet_conditioning_scale, float):
-            controlnet_conditioning_scale = [controlnet_conditioning_scale] * len(controlnet.nets)
+            if isinstance(controlnet, MultiControlNetModel) and isinstance(controlnet_conditioning_scale, float):
+                controlnet_conditioning_scale = [controlnet_conditioning_scale] * len(controlnet.nets)
 
-        global_pool_conditions = (
-            controlnet.config.global_pool_conditions
-            if isinstance(controlnet, ControlNetModel)
-            else controlnet.nets[0].config.global_pool_conditions
-        )
-        guess_mode = guess_mode or global_pool_conditions
+            global_pool_conditions = (
+                controlnet.config.global_pool_conditions
+                if isinstance(controlnet, ControlNetModel)
+                else controlnet.nets[0].config.global_pool_conditions
+            )
+            guess_mode = guess_mode or global_pool_conditions
 
         # 3. Encode input prompt
         text_encoder_lora_scale = (
@@ -1037,24 +1042,12 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
         image = self.image_processor.preprocess(image).to(dtype=torch.float32)
 
         # 5. Prepare controlnet_conditioning_image
-        if isinstance(controlnet, ControlNetModel):
-            control_image = self.prepare_control_image(
-                image=control_image,
-                width=width,
-                height=height,
-                batch_size=batch_size * num_images_per_prompt,
-                num_images_per_prompt=num_images_per_prompt,
-                device=device,
-                dtype=controlnet.dtype,
-                do_classifier_free_guidance=do_classifier_free_guidance,
-                guess_mode=guess_mode,
-            )
-        elif isinstance(controlnet, MultiControlNetModel):
-            control_images = []
-
-            for control_image_ in control_image:
-                control_image_ = self.prepare_control_image(
-                    image=control_image_,
+        if self.controlnet == None:
+            pass
+        else:
+            if isinstance(controlnet, ControlNetModel):
+                control_image = self.prepare_control_image(
+                    image=control_image,
                     width=width,
                     height=height,
                     batch_size=batch_size * num_images_per_prompt,
@@ -1064,12 +1057,27 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
                     do_classifier_free_guidance=do_classifier_free_guidance,
                     guess_mode=guess_mode,
                 )
+            elif isinstance(controlnet, MultiControlNetModel):
+                control_images = []
 
-                control_images.append(control_image_)
+                for control_image_ in control_image:
+                    control_image_ = self.prepare_control_image(
+                        image=control_image_,
+                        width=width,
+                        height=height,
+                        batch_size=batch_size * num_images_per_prompt,
+                        num_images_per_prompt=num_images_per_prompt,
+                        device=device,
+                        dtype=controlnet.dtype,
+                        do_classifier_free_guidance=do_classifier_free_guidance,
+                        guess_mode=guess_mode,
+                    )
 
-            control_image = control_images
-        else:
-            assert False
+                    control_images.append(control_image_)
+
+                control_image = control_images
+            else:
+                assert False
 
         # 5. Preprocess reference image
         ref_image = self.prepare_ref_image(
@@ -1079,7 +1087,7 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
             batch_size=batch_size * num_images_per_prompt,
             num_images_per_prompt=num_images_per_prompt,
             device=device,
-            dtype=controlnet.dtype
+            dtype=prompt_embeds.dtype
         )
 
         # 6. Prepare timesteps
@@ -1476,32 +1484,36 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
                 latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                # controlnet(s) inference
-                if guess_mode and do_classifier_free_guidance:
-                    # Infer ControlNet only for the conditional batch.
-                    control_model_input = latents
-                    control_model_input = self.scheduler.scale_model_input(control_model_input, t)
-                    controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
+                if self.controlnet == None:
+                    down_block_res_samples = None
+                    mid_block_res_sample=None
                 else:
-                    control_model_input = latent_model_input
-                    controlnet_prompt_embeds = prompt_embeds
+                    # controlnet(s) inference
+                    if guess_mode and do_classifier_free_guidance:
+                        # Infer ControlNet only for the conditional batch.
+                        control_model_input = latents
+                        control_model_input = self.scheduler.scale_model_input(control_model_input, t)
+                        controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
+                    else:
+                        control_model_input = latent_model_input
+                        controlnet_prompt_embeds = prompt_embeds
 
-                down_block_res_samples, mid_block_res_sample = self.controlnet(
-                    control_model_input,
-                    t,
-                    encoder_hidden_states=controlnet_prompt_embeds,
-                    controlnet_cond=control_image,
-                    conditioning_scale=controlnet_conditioning_scale,
-                    guess_mode=guess_mode,
-                    return_dict=False,
-                )
+                    down_block_res_samples, mid_block_res_sample = self.controlnet(
+                        control_model_input,
+                        t,
+                        encoder_hidden_states=controlnet_prompt_embeds,
+                        controlnet_cond=control_image,
+                        conditioning_scale=controlnet_conditioning_scale,
+                        guess_mode=guess_mode,
+                        return_dict=False,
+                    )
 
-                if guess_mode and do_classifier_free_guidance:
-                    # Infered ControlNet only for the conditional batch.
-                    # To apply the output of ControlNet to both the unconditional and conditional batches,
-                    # add 0 to the unconditional batch to keep it unchanged.
-                    down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-                    mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+                    if guess_mode and do_classifier_free_guidance:
+                        # Infered ControlNet only for the conditional batch.
+                        # To apply the output of ControlNet to both the unconditional and conditional batches,
+                        # add 0 to the unconditional batch to keep it unchanged.
+                        down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                        mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
                 # ref only part
                 noise = randn_tensor(

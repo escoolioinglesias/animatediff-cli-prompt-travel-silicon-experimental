@@ -47,7 +47,8 @@ def send_to_device(
             for i in range(len(pipeline.controlnet.nets)):
                 pipeline.controlnet.nets[i] = pipeline.controlnet.nets[i].to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
         else:
-            pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
+            if pipeline.controlnet:
+                pipeline.controlnet = pipeline.controlnet.to(device=device, dtype=vae_dtype, memory_format=model_memory_format)
 
     if hasattr(pipeline, 'controlnet_map'):
         if pipeline.controlnet_map:

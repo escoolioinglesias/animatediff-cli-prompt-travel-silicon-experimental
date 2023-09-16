@@ -34,9 +34,10 @@ from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
 from animatediff.utils.util import (get_resized_image, get_resized_image2,
-                                    get_resized_images, prepare_ip_adapter,
-                                    prepare_motion_module, save_frames,
-                                    save_video)
+                                    get_resized_images,
+                                    get_tensor_interpolation_method,
+                                    prepare_ip_adapter, prepare_motion_module,
+                                    save_frames, save_imgs, save_video)
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +410,8 @@ def create_us_pipeline(
 
     if len(controlnet) == 1:
         controlnet = controlnet[0]
+    elif len(controlnet) == 0:
+        controlnet = None
 
     # Load the checkpoint weights into the pipeline
     pipeline:DiffusionPipeline
@@ -647,6 +650,64 @@ def ip_adapter_preprocess(
     return ip_adapter_map if processed else None
 
 
+def save_output(
+        pipeline_output,
+        frame_dir:str,
+        out_file:str,
+        output_map : Dict[str,Any] = {},
+        no_frames : bool = False,
+        save_frames=save_frames,
+        save_video=None,
+):
+
+    output_format = "gif"
+    output_fps = 8
+    if output_map:
+        output_format = output_map["format"] if "format" in output_map else output_format
+        output_fps = output_map["fps"] if "fps" in output_map else output_fps
+        if output_format == "mp4":
+            output_format = "h264"
+
+    if output_format == "gif":
+        out_file = out_file.with_suffix(".gif")
+        if no_frames is not True:
+            if save_frames:
+                save_frames(pipeline_output,frame_dir)
+
+            # generate the output filename and save the video
+            if save_video:
+                save_video(pipeline_output, out_file, output_fps)
+            else:
+                pipeline_output[0].save(
+                    fp=out_file, format="GIF", append_images=pipeline_output[1:], save_all=True, duration=(1 / output_fps * 1000), loop=0
+                )
+
+    else:
+
+        if save_frames:
+            save_frames(pipeline_output,frame_dir)
+
+        from animatediff.rife.ffmpeg import (FfmpegEncoder, VideoCodec,
+                                             codec_extn)
+
+        out_file = out_file.with_suffix( f".{codec_extn(output_format)}" )
+
+        logger.info("Creating ffmpeg encoder...")
+        encoder = FfmpegEncoder(
+            frames_dir=frame_dir,
+            out_file=out_file,
+            codec=output_format,
+            in_fps=output_fps,
+            out_fps=output_fps,
+            lossless=False,
+            param= output_map["encode_param"] if "encode_param" in output_map else {}
+        )
+        logger.info("Encoding interpolated frames with ffmpeg...")
+        result = encoder.encode()
+        logger.debug(f"ffmpeg result: {result}")
+
+
+
 def run_inference(
     pipeline: AnimationPipeline,
     prompt: str = ...,
@@ -699,6 +760,7 @@ def run_inference(
         controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
         controlnet_is_loop = controlnet_map["is_loop"] if "is_loop" in controlnet_map else True,
         ip_adapter_map=ip_adapter_map,
+        interpolation_factor=1
     )
 
     logger.info("Generation complete, saving...")
@@ -875,7 +937,7 @@ def run_upscale(
 
         rate = dist_prev / (dist_prev + dist_next)
 
-        return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
+        return get_tensor_interpolation_method()(prompt_embeds_map[key_prev],prompt_embeds_map[key_next], rate)
 
 
     line_anime_processor = LineartAnimeDetector.from_pretrained("lllyasviel/Annotators")
@@ -978,4 +1040,3 @@ def run_upscale(
     logger.info(f"Saved sample to {out_file}")
 
     return out_images
-

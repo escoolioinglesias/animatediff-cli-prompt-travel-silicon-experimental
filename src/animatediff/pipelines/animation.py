@@ -37,9 +37,10 @@ from animatediff.pipelines.context import (get_context_scheduler,
                                            get_total_steps)
 from animatediff.utils.model import nop_train
 from animatediff.utils.pipeline import get_memory_format
-from animatediff.utils.util import (end_profile, show_gpu, start_profile,
-                                    stopwatch_record, stopwatch_start,
-                                    stopwatch_stop)
+from animatediff.utils.util import (end_profile,
+                                    get_tensor_interpolation_method, show_gpu,
+                                    start_profile, stopwatch_record,
+                                    stopwatch_start, stopwatch_stop)
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +457,43 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])
 
         return prompt_embeds
+
+    def interpolate_latents(self, latents: torch.Tensor, interpolation_factor:int, device ):
+        if interpolation_factor < 2:
+            return latents
+
+        new_latents = torch.zeros(
+                    (latents.shape[0],latents.shape[1],((latents.shape[2]-1) * interpolation_factor)+1, latents.shape[3],latents.shape[4]),
+                    device=latents.device,
+                    dtype=latents.dtype,
+                )
+
+        org_video_length = latents.shape[2]
+        rate = [i/interpolation_factor for i in range(interpolation_factor)][1:]
+
+        new_index = 0
+
+        v0 = None
+        v1 = None
+
+        for i0,i1 in zip( range( org_video_length ),range( org_video_length )[1:] ):
+            v0 = latents[:,:,i0,:,:]
+            v1 = latents[:,:,i1,:,:]
+
+            new_latents[:,:,new_index,:,:] = v0
+            new_index += 1
+
+            for f in rate:
+                v = get_tensor_interpolation_method()(v0.to(device=device),v1.to(device=device),f)
+                new_latents[:,:,new_index,:,:] = v.to(latents.device)
+                new_index += 1
+
+        new_latents[:,:,new_index,:,:] = v1
+        new_index += 1
+
+        return new_latents
+
+
 
     def decode_latents(self, latents: torch.Tensor):
         video_length = latents.shape[2]
@@ -1759,6 +1797,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_max_models_on_vram: int=99,
         controlnet_is_loop: bool=True,
         ip_adapter_map: Dict[str, Any] = None,
+        interpolation_factor = 1,
         **kwargs,
     ):
         global C_REF_MODE
@@ -1874,7 +1913,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
             rate = dist_prev / (dist_prev + dist_next)
 
-            return prompt_embeds_map[key_prev] * (1-rate) + prompt_embeds_map[key_next] * (rate)
+            return get_tensor_interpolation_method()( prompt_embeds_map[key_prev], prompt_embeds_map[key_next], rate )
 
         ### image
         if self.ip_adapter:
@@ -1937,7 +1976,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
             rate = dist_prev / (dist_prev + dist_next)
 
-            return im_prompt_embeds_map[key_prev] * (1-rate) + im_prompt_embeds_map[key_next] * (rate)
+            return get_tensor_interpolation_method()( im_prompt_embeds_map[key_prev], im_prompt_embeds_map[key_next], rate)
 
 
         def get_current_prompt_embeds(
@@ -2397,6 +2436,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             self.ip_adapter = None
             torch.cuda.empty_cache()
             show_gpu("after unload ip_adapter")
+
+        latents = self.interpolate_latents(latents,interpolation_factor, device)
 
         # Return latents if requested (this will never be a dict)
         if not output_type == "latent":

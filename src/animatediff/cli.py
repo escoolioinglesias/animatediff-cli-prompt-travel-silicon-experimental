@@ -15,7 +15,8 @@ from animatediff import __version__, console, get_dir
 from animatediff.generate import (controlnet_preprocess, create_pipeline,
                                   create_us_pipeline, ip_adapter_preprocess,
                                   load_controlnet_models, run_inference,
-                                  run_upscale, unload_controlnet_models)
+                                  run_upscale, save_output,
+                                  unload_controlnet_models)
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
 from animatediff.settings import (CKPT_EXTENSIONS, InferenceConfig,
                                   ModelConfig, get_infer_config,
@@ -25,7 +26,8 @@ from animatediff.utils.model import checkpoint_to_pipeline, get_base_model
 from animatediff.utils.pipeline import get_context_params, send_to_device
 from animatediff.utils.util import (extract_frames, is_v2_motion_module,
                                     path_from_cwd, save_frames, save_imgs,
-                                    save_video)
+                                    save_video,
+                                    set_tensor_interpolation_method)
 from animatediff.utils.wild_card import replace_wild_card
 
 cli: typer.Typer = typer.Typer(
@@ -93,6 +95,12 @@ def version_callback(value: bool):
     if value:
         console.print(f"AnimateDiff v{__version__}")
         raise typer.Exit()
+
+def get_random():
+    import sys
+
+    import numpy as np
+    return int(np.random.randint(sys.maxsize, dtype=np.int64))
 
 
 @cli.command()
@@ -281,6 +289,8 @@ def generate(
     is_v2 = is_v2_motion_module(model_config.motion_module)
     infer_config: InferenceConfig = get_infer_config(is_v2)
 
+    set_tensor_interpolation_method( model_config.tensor_interpolation_slerp )
+
     # set sane defaults for context, overlap, and stride if not supplied
     context, overlap, stride = get_context_params(length, context, overlap, stride)
 
@@ -338,7 +348,7 @@ def generate(
     # fix seed
     for i, s in enumerate(model_config.seed):
         if s == -1:
-            model_config.seed[i] = torch.seed()
+            model_config.seed[i] = get_random()
 
     # wildcard conversion
     wild_card_dir = get_dir("wildcards")
@@ -376,10 +386,6 @@ def generate(
             n_prompt = model_config.n_prompt[idx % num_negatives]
             seed = model_config.seed[idx % num_seeds]
 
-            # duplicated in run_inference, but this lets us use it for frame save dirs
-            # TODO: Move gif Output out of run_inference...
-            if seed == -1:
-                seed = torch.seed()
             logger.info(f"Generation seed: {seed}")
 
             prompt_map = {}
@@ -553,6 +559,8 @@ def tile_upscale(
     infer_config: InferenceConfig = get_infer_config(is_v2_motion_module(model_config.motion_module))
     frames_dir = frames_dir.absolute()
 
+    set_tensor_interpolation_method( model_config.tensor_interpolation_slerp )
+
     # turn the device string into a torch.device
     device: torch.device = torch.device(device)
 
@@ -638,7 +646,7 @@ def tile_upscale(
         seed = seed = model_config.seed[idx % num_seeds]
 
         if seed == -1:
-            seed = torch.seed()
+            seed = get_random()
         logger.info(f"Generation seed: {seed}")
 
         prompt_map = {}
@@ -806,3 +814,296 @@ def merge(
             logger.info("Converting checkpoint to HuggingFace pipeline...")
             g_pipeline, model_dir = checkpoint_to_pipeline(checkpoint)
     logger.info("Done!")
+
+
+
+@cli.command(no_args_is_help=True)
+def refine(
+    frames_dir: Annotated[
+        Path,
+        typer.Argument(path_type=Path, file_okay=False, exists=True, help="Path to source frames directory"),
+    ] = ...,
+    config_path: Annotated[
+        Path,
+        typer.Option(
+            "--config-path",
+            "-c",
+            path_type=Path,
+            exists=True,
+            readable=True,
+            dir_okay=False,
+            help="Path to a prompt configuration JSON file. default is frames_dir/../prompt.json",
+        ),
+    ] = None,
+    interpolation_multiplier: Annotated[
+        int,
+        typer.Option(
+            "--interpolation-multiplier",
+            "-M",
+            min=1,
+            max=10,
+            help="interpolation multiplier",
+            rich_help_panel="Generation",
+        ),
+    ] = 1,
+    tile_conditioning_scale: Annotated[
+        float,
+        typer.Option(
+            "--tile",
+            "-t",
+            min= 0,
+            max= 1.0,
+            help="controlnet_tile conditioning scale",
+            rich_help_panel="Generation",
+        ),
+    ] = 0.75,
+    width: Annotated[
+        int,
+        typer.Option(
+            "--width",
+            "-W",
+            min=-1,
+            max=3840,
+            help="Width of generated frames",
+            rich_help_panel="Generation",
+        ),
+    ] = -1,
+    height: Annotated[
+        int,
+        typer.Option(
+            "--height",
+            "-H",
+            min=-1,
+            max=2160,
+            help="Height of generated frames",
+            rich_help_panel="Generation",
+        ),
+    ] = -1,
+    length: Annotated[
+        int,
+        typer.Option(
+            "--length",
+            "-L",
+            min=-1,
+            max=9999,
+            help="Number of frames to generate. -1 means using all frames in frames_dir.",
+            rich_help_panel="Generation",
+        ),
+    ] = -1,
+    context: Annotated[
+        Optional[int],
+        typer.Option(
+            "--context",
+            "-C",
+            min=1,
+            max=32,
+            help="Number of frames to condition on (default: max of <length> or 32). max for motion module v1 is 24",
+            show_default=False,
+            rich_help_panel="Generation",
+        ),
+    ] = None,
+    overlap: Annotated[
+        Optional[int],
+        typer.Option(
+            "--overlap",
+            "-O",
+            min=1,
+            max=12,
+            help="Number of frames to overlap in context (default: context//4)",
+            show_default=False,
+            rich_help_panel="Generation",
+        ),
+    ] = None,
+    stride: Annotated[
+        Optional[int],
+        typer.Option(
+            "--stride",
+            "-S",
+            min=0,
+            max=8,
+            help="Max motion stride as a power of 2 (default: 0)",
+            show_default=False,
+            rich_help_panel="Generation",
+        ),
+    ] = None,
+    repeats: Annotated[
+        int,
+        typer.Option(
+            "--repeats",
+            "-r",
+            min=1,
+            max=99,
+            help="Number of times to repeat the refine (default: 1)",
+            show_default=False,
+            rich_help_panel="Generation",
+        ),
+    ] = 1,
+    device: Annotated[
+        str,
+        typer.Option(
+            "--device", "-d", help="Device to run on (cpu, cuda, cuda:id)", rich_help_panel="Advanced"
+        ),
+    ] = "cuda",
+    use_xformers: Annotated[
+        bool,
+        typer.Option(
+            "--xformers",
+            "-x",
+            is_flag=True,
+            help="Use XFormers instead of SDP Attention",
+            rich_help_panel="Advanced",
+        ),
+    ] = False,
+    force_half_vae: Annotated[
+        bool,
+        typer.Option(
+            "--half-vae",
+            is_flag=True,
+            help="Force VAE to use fp16 (not recommended)",
+            rich_help_panel="Advanced",
+        ),
+    ] = False,
+    out_dir: Annotated[
+        Path,
+        typer.Option(
+            "--out-dir",
+            "-o",
+            path_type=Path,
+            file_okay=False,
+            help="Directory for output folders (frames, gifs, etc)",
+            rich_help_panel="Output",
+        ),
+    ] = Path("refine/"),
+):
+    import shutil
+
+    from PIL import Image
+
+    from animatediff.rife.rife import rife_interpolate
+
+    if not config_path:
+        tmp = frames_dir.parent.joinpath("prompt.json")
+        if tmp.is_file():
+            config_path = tmp
+        else:
+            raise ValueError(f"config_path invalid.")
+
+    org_frames = sorted(glob.glob( os.path.join(frames_dir, "[0-9]*.png"), recursive=False))
+    W,H = Image.open(org_frames[0]).size
+
+    if width == -1 and height == -1:
+        width = W
+        height = H
+    elif width == -1:
+        width = int(height * W / H) //8 * 8
+    elif height == -1:
+        height = int(width * H / W) //8 * 8
+    else:
+        pass
+
+    if length == -1:
+        length = len(org_frames)
+    else:
+        length = min(length, len(org_frames))
+
+    config_path = config_path.absolute()
+    logger.info(f"Using generation config: {path_from_cwd(config_path)}")
+    model_config: ModelConfig = get_model_config(config_path)
+
+    # get a timestamp for the output directory
+    time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    # make the output directory
+    save_dir = out_dir.joinpath(f"{time_str}-{model_config.save_name}")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Will save outputs to ./{path_from_cwd(save_dir)}")
+
+    seeds = [get_random() for i in range(repeats)]
+
+    rife_img_dir = None
+
+    for repeat_count in range(repeats):
+
+        if interpolation_multiplier > 1:
+            rife_img_dir = save_dir.joinpath(f"{repeat_count:02d}_rife_frame")
+            rife_img_dir.mkdir(parents=True, exist_ok=True)
+
+            rife_interpolate(frames_dir, rife_img_dir, interpolation_multiplier)
+            length *= interpolation_multiplier
+
+            if model_config.output:
+                model_config.output["fps"] *= interpolation_multiplier
+            if model_config.prompt_map:
+                model_config.prompt_map = { str(int(i)*interpolation_multiplier): model_config.prompt_map[i] for i in model_config.prompt_map }
+
+            frames_dir = rife_img_dir
+
+
+        controlnet_img_dir = save_dir.joinpath(f"{repeat_count:02d}_controlnet_image")
+
+        for c in ["controlnet_canny","controlnet_depth","controlnet_inpaint","controlnet_ip2p","controlnet_lineart","controlnet_lineart_anime","controlnet_mlsd","controlnet_normalbae","controlnet_openpose","controlnet_scribble","controlnet_seg","controlnet_shuffle","controlnet_softedge","controlnet_tile"]:
+            c_dir = controlnet_img_dir.joinpath(c)
+            c_dir.mkdir(parents=True, exist_ok=True)
+
+        shutil.copytree(frames_dir, controlnet_img_dir.joinpath("controlnet_tile"), dirs_exist_ok=True)
+
+        model_config.controlnet_map["input_image_dir"] = os.path.relpath(controlnet_img_dir.absolute(), data_dir)
+        model_config.controlnet_map["is_loop"] = False
+
+        if "controlnet_tile" in model_config.controlnet_map:
+            model_config.controlnet_map["controlnet_tile"]["enable"] = True
+            model_config.controlnet_map["controlnet_tile"]["control_scale_list"] = []
+            model_config.controlnet_map["controlnet_tile"]["controlnet_conditioning_scale"] = tile_conditioning_scale
+
+        else:
+            model_config.controlnet_map["controlnet_tile"] = {
+                "enable": True,
+                "use_preprocessor":True,
+                "guess_mode":False,
+                "controlnet_conditioning_scale": tile_conditioning_scale,
+                "control_guidance_start": 0.0,
+                "control_guidance_end": 1.0,
+                "control_scale_list":[]
+            }
+
+        model_config.seed = [seeds[repeat_count]]
+
+        config_path = save_dir.joinpath(f"{repeat_count:02d}_prompt.json")
+        config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+
+
+        generated_dir = generate(
+            config_path=config_path,
+            width=width,
+            height=height,
+            length=length,
+            context=context,
+            overlap=overlap,
+            stride=stride,
+            device=device,
+            use_xformers=use_xformers,
+            force_half_vae=force_half_vae,
+            out_dir=save_dir,
+        )
+
+        interpolation_multiplier = 1
+
+        torch.cuda.empty_cache()
+
+        generated_dir = generated_dir.rename(generated_dir.parent / f"{time_str}_{repeat_count:02d}")
+
+
+        frames_dir = glob.glob( os.path.join(generated_dir, "00-[0-9]*"), recursive=False)[0]
+
+
+    if rife_img_dir:
+        frames = sorted(glob.glob( os.path.join(rife_img_dir, "[0-9]*.png"), recursive=False))
+        out_images = []
+        for f in frames:
+            out_images.append(Image.open(f))
+
+        out_file = save_dir.joinpath(f"rife_only_for_comparison")
+        save_output(out_images,rife_img_dir,out_file,model_config.output,True,save_frames=None,save_video=None)
+
+
+    logger.info(f"Refined results are output to {generated_dir}")
+

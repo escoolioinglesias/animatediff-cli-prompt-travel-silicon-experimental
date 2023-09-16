@@ -99,6 +99,7 @@ class ModelConfig(BaseSettings):
     path: Path = Field(...)  # Path to the model
     motion_module: Path = Field(...)  # Path to the motion module
     compile: bool = Field(False)  # whether to compile the model with TorchDynamo
+    tensor_interpolation_slerp: bool = Field(True)
     seed: list[int] = Field([])  # Seed(s) for the random number generators
     scheduler: DiffusionScheduler = Field(DiffusionScheduler.k_dpmpp_2m)  # Scheduler to use
     steps: int = 25  # Number of inference steps to run
