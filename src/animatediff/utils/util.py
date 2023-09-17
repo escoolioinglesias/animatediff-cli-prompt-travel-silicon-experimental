@@ -237,7 +237,7 @@ def prepare_wd14tagger():
 
 
 
-def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration):
+def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset):
     import ffmpeg
 
     probe = ffmpeg.probe(movie_file_path)
@@ -249,8 +249,11 @@ def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration):
 
     node = node.filter( "fps", fps=fps )
 
+
     if duration > 0:
-        node = node.trim(duration=duration)
+        node = node.trim(start=offset,end=offset+duration).setpts('PTS-STARTPTS')
+    elif offset > 0:
+        node = node.trim(start=offset).setpts('PTS-STARTPTS')
 
     if aspect_ratio > 0:
         # aspect ratio (width / height)
@@ -272,6 +275,9 @@ def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration):
     node = node.output( str(out_dir.resolve().joinpath("%08d.png")), start_number=0 )
 
     node.run(quiet=True, overwrite_output=True)
+
+
+
 
 
 

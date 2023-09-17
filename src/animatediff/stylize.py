@@ -88,6 +88,16 @@ def create_config(
             help="Video duration in seconds. -1 means that the duration of the input video is used as is",
         ),
     ] = -1,
+    offset: Annotated[
+        int,
+        typer.Option(
+            "--offset",
+            "-of",
+            min=0,
+            max=3600,
+            help="offset in seconds. '-d 30 -of 1200' means to use 1200-1230 seconds of the input video",
+        ),
+    ] = 0,
     aspect_ratio: Annotated[
         float,
         typer.Option(
@@ -128,32 +138,36 @@ def create_config(
             help="threshold for character token confidence",
         ),
     ] = 0.85,
-    with_confidence: Annotated[
+    without_confidence: Annotated[
         bool,
         typer.Option(
-            "--confidence-format",
-            "-cf",
+            "--no-confidence-format",
+            "-ncf",
             is_flag=True,
-            help="confidence token format or not",
+            help="confidence token format or not. ex. '(close-up:0.57), (monochrome:1.1)' -> 'close-up, monochrome'",
         ),
-    ] = True,
-    is_danbooru_format: Annotated[
+    ] = False,
+    is_no_danbooru_format: Annotated[
         bool,
         typer.Option(
-            "--danbooru-format",
-            "-df",
+            "--no-danbooru-format",
+            "-ndf",
             is_flag=True,
-            help="danbooru token format or not",
+            help="danbooru token format or not. ex. 'bandaid_on_leg, short_hair' -> 'bandaid on leg, short hair'",
         ),
-    ] = True,
+    ] = False,
 
 ):
+    """Create a config file for video stylization"""
+    is_danbooru_format = not is_no_danbooru_format
+    with_confidence = not without_confidence
     logger.info(f"{org_movie=}")
     logger.info(f"{config_org=}")
     logger.info(f"{ignore_list=}")
     logger.info(f"{out_dir=}")
     logger.info(f"{fps=}")
     logger.info(f"{duration=}")
+    logger.info(f"{offset=}")
     logger.info(f"{aspect_ratio=}")
     logger.info(f"{predicte_interval=}")
     logger.info(f"{general_threshold=}")
@@ -176,7 +190,7 @@ def create_config(
         c_dir = controlnet_img_dir.joinpath(c)
         c_dir.mkdir(parents=True, exist_ok=True)
 
-    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"), aspect_ratio, duration)
+    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"), aspect_ratio, duration, offset)
 
     shutil.copytree(controlnet_img_dir.joinpath("controlnet_tile"), controlnet_img_dir.joinpath("controlnet_ip2p"), dirs_exist_ok=True)
 
@@ -318,7 +332,19 @@ def generate(
             rich_help_panel="Generation",
         ),
     ] = -1,
+    frame_offset: Annotated[
+        int,
+        typer.Option(
+            "--frame-offset",
+            "-FO",
+            min=0,
+            max=999999,
+            help="Frame offset at generation.",
+            rich_help_panel="Generation",
+        ),
+    ] = 0,
 ):
+    """Run video stylization"""
     from animatediff.cli import generate
 
     time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
@@ -329,9 +355,46 @@ def generate(
     model_config: ModelConfig = get_model_config(config_org)
 
     if length > 0:
-        model_config.stylize_config["0"]["length"] = min(model_config.stylize_config["0"]["length"], length)
+        model_config.stylize_config["0"]["length"] = min(model_config.stylize_config["0"]["length"] - frame_offset, length)
         if "1" in model_config.stylize_config:
-            model_config.stylize_config["1"]["length"] = min(model_config.stylize_config["1"]["length"], length)
+            model_config.stylize_config["1"]["length"] = min(model_config.stylize_config["1"]["length"] - frame_offset, length)
+
+    if frame_offset > 0:
+        org_controlnet_img_dir = data_dir.joinpath( model_config.controlnet_map["input_image_dir"] )
+        new_controlnet_img_dir = org_controlnet_img_dir.parent / "00_tmp_controlnet_image"
+        if new_controlnet_img_dir.is_dir():
+            shutil.rmtree(new_controlnet_img_dir)
+        new_controlnet_img_dir.mkdir(parents=True, exist_ok=True)
+
+        for c in ["controlnet_canny","controlnet_depth","controlnet_inpaint","controlnet_ip2p","controlnet_lineart","controlnet_lineart_anime","controlnet_mlsd","controlnet_normalbae","controlnet_openpose","controlnet_scribble","controlnet_seg","controlnet_shuffle","controlnet_softedge","controlnet_tile"]:
+            src_dir = org_controlnet_img_dir.joinpath(c)
+            dst_dir = new_controlnet_img_dir.joinpath(c)
+            if src_dir.is_dir():
+                dst_dir.mkdir(parents=True, exist_ok=True)
+
+                frame_length = model_config.stylize_config["0"]["length"]
+
+                src_imgs = sorted(glob.glob( os.path.join(src_dir, "[0-9]*.png"), recursive=False))
+                for img in src_imgs:
+                    n = int(Path(img).stem)
+                    if n in range(frame_offset, frame_offset + frame_length):
+                        dst_img_path = dst_dir.joinpath( f"{n-frame_offset:08d}.png" )
+                        shutil.copy(img, dst_img_path)
+
+        new_prompt_map = {}
+        for p in model_config.prompt_map:
+            n = int(p)
+            if n in range(frame_offset, frame_offset + frame_length):
+                new_prompt_map[str(n-frame_offset)]=model_config.prompt_map[p]
+
+        model_config.prompt_map = new_prompt_map
+
+        model_config.controlnet_map["input_image_dir"] = os.path.relpath(new_controlnet_img_dir.absolute(), data_dir)
+
+        tmp_config_path = stylize_dir.joinpath("prompt_tmp.json")
+        tmp_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+        config_org = tmp_config_path
+
 
     output_0_dir = generate(
         config_path=config_org,
@@ -365,7 +428,8 @@ def generate(
         from animatediff.rife.rife import rife_interpolate
 
         rife_img_dir = stylize_dir.joinpath(f"{1:02d}_rife_frame")
-        shutil.rmtree(rife_img_dir)
+        if rife_img_dir.is_dir():
+            shutil.rmtree(rife_img_dir)
         rife_img_dir.mkdir(parents=True, exist_ok=True)
 
         rife_interpolate(output_0_img_dir, rife_img_dir, interpolation_multiplier)

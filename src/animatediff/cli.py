@@ -842,7 +842,7 @@ def refine(
             "-M",
             min=1,
             max=10,
-            help="interpolation multiplier",
+            help="Interpolate with RIFE before generation. (I'll leave it as is, but I think interpolation after generation is sufficient).",
             rich_help_panel="Generation",
         ),
     ] = 1,
@@ -975,6 +975,7 @@ def refine(
         ),
     ] = Path("refine/"),
 ):
+    """Create upscaled or improved video using pre-generated frames"""
     import shutil
 
     from PIL import Image
