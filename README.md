@@ -263,6 +263,9 @@ animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/prompt
 
 # upscale width to 768 (smoother than tile-upscale)
 animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -W 768
+# If generation takes an unusually long time, there is not enough vram.
+# Give up large size or reduce the size of the context.
+animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -W 1024 -C 6
 
 # change lora and prompt to make minor changes to the video.
 animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/some_minor_changed.json
@@ -283,7 +286,13 @@ animatediff stylize create-config YOUR_SRC_MOVIE_FILE.mp4
 # It is recommended to specify a short length for the test run
 
 # generate(test run)
+# 16 frames
 animatediff stylize generate STYLYZE_DIR -L 16
+# 16 frames from the 200th frame
+animatediff stylize generate STYLYZE_DIR -L 16 -FO 200
+
+# If generation takes an unusually long time, there is not enough vram.
+# Give up large size or reduce the size of the context.
 
 # generate
 animatediff stylize generate STYLYZE_DIR
