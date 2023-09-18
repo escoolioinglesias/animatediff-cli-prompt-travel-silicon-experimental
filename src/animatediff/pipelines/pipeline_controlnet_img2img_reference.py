@@ -1180,7 +1180,6 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
                                 **cross_attention_kwargs,
                             )
                         attn_output = style_fidelity * attn_output_c + (1.0 - style_fidelity) * attn_output_uc
-                        self.bank.clear()
                     else:
                         attn_output = self.attn1(
                             norm_hidden_states,
@@ -1188,6 +1187,7 @@ class StableDiffusionControlNetImg2ImgReferencePipeline(DiffusionPipeline, Textu
                             attention_mask=attention_mask,
                             **cross_attention_kwargs,
                         )
+                    self.bank.clear()
             if self.use_ada_layer_norm_zero:
                 attn_output = gate_msa.unsqueeze(1) * attn_output
             hidden_states = attn_output + hidden_states

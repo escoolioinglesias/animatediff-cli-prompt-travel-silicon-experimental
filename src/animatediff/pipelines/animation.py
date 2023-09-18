@@ -704,7 +704,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         ref_image_latents = ref_image_latents.to(device=device, dtype=dtype)
         return ref_image_latents
 
-
     # from diffusers/examples/community/stable_diffusion_controlnet_reference.py
     def prepare_controlnet_ref_only_without_motion(
         self,
@@ -717,6 +716,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         style_fidelity,
         reference_attn,
         reference_adain,
+        _scale_pattern,
     ):
         global C_REF_MODE
         # 9. Modify self attention and group norm
@@ -726,6 +726,15 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             .type_as(ref_image_latents)
             .bool()
         )
+
+        _scale_pattern = _scale_pattern * (batch_size // len(_scale_pattern) + 1)
+        _scale_pattern = _scale_pattern[:batch_size]
+        _rev_pattern = [1-i for i in _scale_pattern]
+
+        scale_pattern_double = torch.tensor(_scale_pattern*2).to(self.device, dtype=self.unet.dtype)
+        rev_pattern_double = torch.tensor(_rev_pattern*2).to(self.device, dtype=self.unet.dtype)
+        scale_pattern = torch.tensor(_scale_pattern).to(self.device, dtype=self.unet.dtype)
+        rev_pattern = torch.tensor(_rev_pattern).to(self.device, dtype=self.unet.dtype)
 
 
         def hacked_basic_transformer_inner_forward(
@@ -788,7 +797,15 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                         else:
                             attn_output = attn_output_uc
 
-                        self.bank.clear()
+                        attn_org = self.attn1(
+                            norm_hidden_states,
+                            encoder_hidden_states=encoder_hidden_states if self.only_cross_attention else None,
+                            attention_mask=attention_mask,
+                            **cross_attention_kwargs,
+                        )
+
+                        attn_output = scale_pattern_double[:,None,None] * attn_output + rev_pattern_double[:,None,None] * attn_org
+
                     else:
                         attn_output = self.attn1(
                             norm_hidden_states,
@@ -796,6 +813,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             attention_mask=attention_mask,
                             **cross_attention_kwargs,
                         )
+
+                    self.bank.clear()
 
             hidden_states = attn_output + hidden_states
 
@@ -880,7 +899,10 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             x_c = rearrange(x_c, "(b f) c h w -> b c f h w", f=f)
                             x = rearrange(x, "(b f) c h w -> b c f h w", f=f)
 
-                        x = style_fidelity * x_c + (1.0 - style_fidelity) * x_uc
+                        mod_x = style_fidelity * x_c + (1.0 - style_fidelity) * x_uc
+
+                    x = scale_pattern[None,None,:,None,None] * mod_x + rev_pattern[None,None,:,None,None] * x
+
                     self.mean_bank = []
                     self.var_bank = []
 
@@ -891,8 +913,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                         hidden_states,
                         temb,
                         encoder_hidden_states=encoder_hidden_states,
-                        encoder_attention_mask=encoder_attention_mask,
                     )
+
                 hidden_states = resnet(hidden_states, temb)
 
             return hidden_states
@@ -923,7 +945,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     encoder_attention_mask=encoder_attention_mask,
                     return_dict=False,
                 )[0]
-                # add motion module
 
                 if C_REF_MODE == "write":
                     if gn_auto_machine_weight >= self.gn_weight:
@@ -950,8 +971,11 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
                             hidden_states_c = rearrange(hidden_states_c, "(b f) c h w -> b c f h w", f=f)
 
-                        hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
+                        mod_hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
 
+                        hidden_states = scale_pattern[None,None,:,None,None] * mod_hidden_states + rev_pattern[None,None,:,None,None] * hidden_states
+
+                # add motion module
                 hidden_states = (
                     motion_module(hidden_states, temb, encoder_hidden_states=encoder_hidden_states)
                     if motion_module is not None
@@ -980,8 +1004,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             for i, (resnet, motion_module) in enumerate(zip(self.resnets, self.motion_modules)):
                 hidden_states = resnet(hidden_states, temb)
 
-                # add motion module
-
                 if C_REF_MODE == "write":
                     if gn_auto_machine_weight >= self.gn_weight:
                         var, mean = torch.var_mean(hidden_states, dim=(3, 4), keepdim=True, correction=0)
@@ -1007,8 +1029,11 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
                             hidden_states_c = rearrange(hidden_states_c, "(b f) c h w -> b c f h w", f=f)
 
-                        hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
+                        mod_hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
 
+                        hidden_states = scale_pattern[None,None,:,None,None] * mod_hidden_states + rev_pattern[None,None,:,None,None] * hidden_states
+
+                # add motion module
                 if motion_module:
                     hidden_states = motion_module(
                         hidden_states, temb, encoder_hidden_states=encoder_hidden_states
@@ -1056,7 +1081,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                     return_dict=False,
                 )[0]
 
-                # add motion module
 
                 if C_REF_MODE == "write":
                     if gn_auto_machine_weight >= self.gn_weight:
@@ -1083,8 +1107,11 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
                             hidden_states_c = rearrange(hidden_states_c, "(b f) c h w -> b c f h w", f=f)
 
-                        hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
+                        mod_hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
 
+                        hidden_states = scale_pattern[None,None,:,None,None] * mod_hidden_states + rev_pattern[None,None,:,None,None] * hidden_states
+
+                # add motion module
                 if motion_module:
                     hidden_states = motion_module(
                         hidden_states, temb, encoder_hidden_states=encoder_hidden_states
@@ -1134,7 +1161,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
                             hidden_states_c = rearrange(hidden_states_c, "(b f) c h w -> b c f h w", f=f)
 
-                        hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
+                        mod_hidden_states = style_fidelity * hidden_states_c + (1.0 - style_fidelity) * hidden_states_uc
+
+                        hidden_states = scale_pattern[None,None,:,None,None] * mod_hidden_states + rev_pattern[None,None,:,None,None] * hidden_states
 
                 if motion_module:
                     hidden_states = motion_module(
@@ -1200,7 +1229,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
             gn_modules = None
             torch.cuda.empty_cache()
-
 
 
     # from diffusers/examples/community/stable_diffusion_controlnet_reference.py
@@ -1306,7 +1334,6 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
 
                         attn_output = scale_pattern_double[:,None,None] * attn_output + rev_pattern_double[:,None,None] * attn_org
 
-                        self.bank.clear()
                     else:
                         attn_output = self.attn1(
                             norm_hidden_states,
@@ -1314,6 +1341,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
                             attention_mask=attention_mask,
                             **cross_attention_kwargs,
                         )
+
+                    self.bank.clear()
+
 
             hidden_states = attn_output + hidden_states
 
@@ -2140,7 +2170,8 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             ref_image_latents = rearrange(ref_image_latents, "(b f) c h w -> b c f h w", f=context_frames)
 
             # 5.99. Modify self attention and group norm
-            self.prepare_controlnet_ref_only(
+#            self.prepare_controlnet_ref_only(
+            self.prepare_controlnet_ref_only_without_motion(
                 ref_image_latents=ref_image_latents,
                 batch_size=context_frames,
                 num_images_per_prompt=1,

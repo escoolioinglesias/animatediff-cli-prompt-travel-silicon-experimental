@@ -181,12 +181,12 @@
     "controlnet_ref": {
         "enable": false,
         "ref_image": "ref_image/ref_sample.png",
-        "attention_auto_machine_weight": 1.0,
-        "gn_auto_machine_weight": 1.0,
+        "attention_auto_machine_weight": 0.3,
+        "gn_auto_machine_weight": 0.3,
         "style_fidelity": 0.5,
         "reference_attn": true,
         "reference_adain": false,
-        "scale_pattern":[0.5]
+        "scale_pattern":[1.0]
     }
   },
   "upscale_config": {

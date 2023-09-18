@@ -12,12 +12,17 @@ from tqdm.rich import tqdm
 
 logger = logging.getLogger(__name__)
 
-def save_frames(video: Tensor, frames_dir: PathLike):
+def save_frames(video: Tensor, frames_dir: PathLike, show_progress:bool=True):
     frames_dir = Path(frames_dir)
     frames_dir.mkdir(parents=True, exist_ok=True)
     frames = rearrange(video, "b c t h w -> t b c h w")
-    for idx, frame in enumerate(tqdm(frames, desc=f"Saving frames to {frames_dir.stem}")):
-        save_image(frame, frames_dir.joinpath(f"{idx:08d}.png"))
+    if show_progress:
+        for idx, frame in enumerate(tqdm(frames, desc=f"Saving frames to {frames_dir.stem}")):
+            save_image(frame, frames_dir.joinpath(f"{idx:08d}.png"))
+    else:
+        for idx, frame in enumerate(frames):
+            save_image(frame, frames_dir.joinpath(f"{idx:08d}.png"))
+
 
 def save_imgs(imgs:List[Image.Image], frames_dir: PathLike):
     frames_dir = Path(frames_dir)
