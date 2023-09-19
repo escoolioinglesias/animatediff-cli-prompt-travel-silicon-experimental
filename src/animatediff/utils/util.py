@@ -240,6 +240,27 @@ def prepare_wd14tagger():
             repo_id="SmilingWolf/wd-v1-4-moat-tagger-v2", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/WD14tagger"
         )
 
+def prepare_dwpose():
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/DWPose", exist_ok=True)
+    for hub_file in [
+        "dw-ll_ucoco_384.onnx",
+        "yolox_l.onnx",
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/DWPose" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="yzd-v/DWPose", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/DWPose"
+        )
 
 
 def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset):

@@ -23,6 +23,7 @@ from transformers import (AutoImageProcessor, CLIPImageProcessor,
                           UperNetForSemanticSegmentation)
 
 from animatediff import get_dir
+from animatediff.dwpose import DWposeDetector
 from animatediff.models.clip import CLIPSkipTextModel
 from animatediff.models.unet import UNet3DConditionModel
 from animatediff.pipelines import AnimationPipeline, load_text_embeddings
@@ -36,8 +37,18 @@ from animatediff.utils.model import (ensure_motion_modules,
 from animatediff.utils.util import (get_resized_image, get_resized_image2,
                                     get_resized_images,
                                     get_tensor_interpolation_method,
-                                    prepare_ip_adapter, prepare_motion_module,
-                                    save_frames, save_imgs, save_video)
+                                    prepare_dwpose, prepare_ip_adapter,
+                                    prepare_motion_module, save_frames,
+                                    save_imgs, save_video)
+
+try:
+    import onnxruntime
+    onnxruntime_installed = True
+except:
+    onnxruntime_installed = False
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +188,7 @@ def create_controlnet_model(type_str):
 
 default_preprocessor_table={
     "controlnet_lineart_anime":"lineart_anime",
-    "controlnet_openpose":"openpose_full",
+    "controlnet_openpose": "openpose_full" if onnxruntime_installed==False else "dwpose",
     "controlnet_softedge":"softedge_hedsafe",
     "controlnet_shuffle":"shuffle",
     "controlnet_depth":"depth_midas",
@@ -186,20 +197,13 @@ default_preprocessor_table={
     "controlnet_mlsd":"mlsd",
     "controlnet_normalbae":"normal_bae",
     "controlnet_scribble":"scribble_pidsafe",
+    "controlnet_seg":"upernet_seg",
 }
 
-def create_default_preprocessor(type_str):
-    if type_str in default_preprocessor_table:
-        return ControlnetPreProcessor(default_preprocessor_table[type_str])
-    elif type_str == "controlnet_seg":
-        return SegPreProcessor()
-    else:
-        return NullPreProcessor()
-
-def create_preprocessor(preprocessor_map):
-    pre_type = preprocessor_map["type"]
-    if pre_type in MODELS:
-        return ControlnetPreProcessor(pre_type)
+def create_preprocessor_from_name(pre_type):
+    if pre_type == "dwpose":
+        prepare_dwpose()
+        return DWposeDetector()
     elif pre_type == "upernet_seg":
         return SegPreProcessor()
     elif pre_type == "blur":
@@ -208,14 +212,25 @@ def create_preprocessor(preprocessor_map):
         return TileResamplePreProcessor()
     elif pre_type == "none":
         return NullPreProcessor()
+    elif pre_type in MODELS:
+        return ControlnetPreProcessor(pre_type)
     else:
         raise ValueError(f"unknown controlnet preprocessor type {pre_type}")
+
+
+def create_default_preprocessor(type_str):
+    if type_str in default_preprocessor_table:
+        pre_type = default_preprocessor_table[type_str]
+    else:
+        pre_type = "none"
+
+    return create_preprocessor_from_name(pre_type)
 
 
 def get_preprocessor(type_str, device_str, preprocessor_map):
     if type_str not in controlnet_preprocessor:
         if preprocessor_map:
-            controlnet_preprocessor[type_str] = create_preprocessor(preprocessor_map)
+            controlnet_preprocessor[type_str] = create_preprocessor_from_name(preprocessor_map["type"])
 
         if type_str not in controlnet_preprocessor:
             controlnet_preprocessor[type_str] = create_default_preprocessor(type_str)
@@ -224,6 +239,10 @@ def get_preprocessor(type_str, device_str, preprocessor_map):
             if hasattr(controlnet_preprocessor[type_str].processor, "to"):
                 if device_str:
                     controlnet_preprocessor[type_str].processor.to(device_str)
+        elif hasattr(controlnet_preprocessor[type_str], "to"):
+            if device_str:
+                controlnet_preprocessor[type_str].to(device_str)
+
 
     return controlnet_preprocessor[type_str]
 
