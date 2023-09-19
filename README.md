@@ -71,6 +71,10 @@ python -m pip install xformers
 
 # If you want to use the 'stylize' command, you will also need
 python -m pip install -e .[stylize]
+
+# If you want to use use dwpose as a preprocessor for controlnet_openpose, you will also need
+python -m pip install -e .[dwpose]
+# (DWPose is a more powerful version of Openpose)
 ```
 (https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)
 
@@ -335,6 +339,7 @@ animatediff tile-upscale output/2023-08-25T20-00-00-sample-mistoonanime_v20/00-3
 - [AnimateDiff](https://github.com/guoyww/AnimateDiff)
 - [ControlNet](https://github.com/lllyasviel/ControlNet)
 - [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter)
+- [DWPose](https://github.com/IDEA-Research/DWPose)
 
 Below is the original readme.
 
