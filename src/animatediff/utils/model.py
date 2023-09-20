@@ -60,9 +60,9 @@ def checkpoint_to_pipeline(
         local_files_only=True,
         load_safety_checker=False,
     )
-    target_dir.mkdir(parents=True, exist_ok=True)
 
     if save:
+        target_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Saving pipeline to {path_from_cwd(target_dir)}")
         pipeline.save_pretrained(target_dir, safe_serialization=True)
     return pipeline, target_dir

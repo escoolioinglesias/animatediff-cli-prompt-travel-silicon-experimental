@@ -267,6 +267,8 @@ def create_config(
             "stride": 0,
         },
         "1":{
+            "steps": model_config.steps,
+            "guidance_scale": model_config.guidance_scale,
             "width": int(width * 1.5 //8*8),
             "height": int(height * 1.5 //8*8),
             "length": length,
@@ -471,6 +473,9 @@ def generate(
 
     save_config_path = stylize_dir.joinpath("prompt_01.json")
     save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+
+    model_config.steps = model_config.stylize_config["1"]["steps"] if "steps" in model_config.stylize_config["1"] else model_config.steps
+    model_config.guidance_scale = model_config.stylize_config["1"]["guidance_scale"] if "guidance_scale" in model_config.stylize_config["1"] else model_config.guidance_scale
 
     output_1_dir = generate(
         config_path=save_config_path,
