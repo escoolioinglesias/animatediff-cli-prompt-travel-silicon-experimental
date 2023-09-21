@@ -471,11 +471,11 @@ def generate(
 
     model_config.ip_adapter_map["enable"] = ip_adapter_for_upscale
 
-    save_config_path = stylize_dir.joinpath("prompt_01.json")
-    save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
-
     model_config.steps = model_config.stylize_config["1"]["steps"] if "steps" in model_config.stylize_config["1"] else model_config.steps
     model_config.guidance_scale = model_config.stylize_config["1"]["guidance_scale"] if "guidance_scale" in model_config.stylize_config["1"] else model_config.guidance_scale
+
+    save_config_path = stylize_dir.joinpath("prompt_01.json")
+    save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
 
     output_1_dir = generate(
         config_path=save_config_path,
