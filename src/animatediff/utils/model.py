@@ -46,6 +46,81 @@ def get_base_model(model_name_or_path: str, local_dir: Path, force: bool = False
     return Path(model_name_or_path)
 
 
+def fix_checkpoint_if_needed(checkpoint: Path, debug:bool):
+    def dump(loaded):
+        for a in loaded:
+            logger.info(f"{a} {loaded[a].shape}")
+
+    if debug:
+        import torch
+        from safetensors.torch import load_file, save_file
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        loaded = load_file(checkpoint, device)
+
+        dump(loaded)
+
+        return
+
+    try:
+        pipeline = StableDiffusionPipeline.from_single_file(
+            pretrained_model_link_or_path=str(checkpoint.absolute()),
+            local_files_only=True,
+            load_safety_checker=False,
+        )
+        logger.info("This file works fine.")
+        return
+    except:
+        from safetensors.torch import load_file, save_file
+
+        loaded = load_file(checkpoint, "cpu")
+
+        convert_table_bias={
+            "first_stage_model.decoder.mid.attn_1.to_k.bias":"first_stage_model.decoder.mid.attn_1.k.bias",
+            "first_stage_model.decoder.mid.attn_1.to_out.0.bias":"first_stage_model.decoder.mid.attn_1.proj_out.bias",
+            "first_stage_model.decoder.mid.attn_1.to_q.bias":"first_stage_model.decoder.mid.attn_1.q.bias",
+            "first_stage_model.decoder.mid.attn_1.to_v.bias":"first_stage_model.decoder.mid.attn_1.v.bias",
+            "first_stage_model.encoder.mid.attn_1.to_k.bias":"first_stage_model.encoder.mid.attn_1.k.bias",
+            "first_stage_model.encoder.mid.attn_1.to_out.0.bias":"first_stage_model.encoder.mid.attn_1.proj_out.bias",
+            "first_stage_model.encoder.mid.attn_1.to_q.bias":"first_stage_model.encoder.mid.attn_1.q.bias",
+            "first_stage_model.encoder.mid.attn_1.to_v.bias":"first_stage_model.encoder.mid.attn_1.v.bias",
+        }
+
+        convert_table_weight={
+            "first_stage_model.decoder.mid.attn_1.to_k.weight":"first_stage_model.decoder.mid.attn_1.k.weight",
+            "first_stage_model.decoder.mid.attn_1.to_out.0.weight":"first_stage_model.decoder.mid.attn_1.proj_out.weight",
+            "first_stage_model.decoder.mid.attn_1.to_q.weight":"first_stage_model.decoder.mid.attn_1.q.weight",
+            "first_stage_model.decoder.mid.attn_1.to_v.weight":"first_stage_model.decoder.mid.attn_1.v.weight",
+            "first_stage_model.encoder.mid.attn_1.to_k.weight":"first_stage_model.encoder.mid.attn_1.k.weight",
+            "first_stage_model.encoder.mid.attn_1.to_out.0.weight":"first_stage_model.encoder.mid.attn_1.proj_out.weight",
+            "first_stage_model.encoder.mid.attn_1.to_q.weight":"first_stage_model.encoder.mid.attn_1.q.weight",
+            "first_stage_model.encoder.mid.attn_1.to_v.weight":"first_stage_model.encoder.mid.attn_1.v.weight",
+        }
+
+
+        #dump(loaded)
+
+        for a in list(loaded.keys()):
+            if a in convert_table_bias:
+                new_key = convert_table_bias[a]
+                loaded[new_key] = loaded.pop(a)
+            elif a in convert_table_weight:
+                new_key = convert_table_weight[a]
+                item = loaded.pop(a)
+                if len(item.shape) == 2:
+                    item = item.unsqueeze(dim=-1).unsqueeze(dim=-1)
+                loaded[new_key] = item
+
+        #dump(loaded)
+
+        new_path = str(checkpoint.parent / checkpoint.stem) + "_fixed"+checkpoint.suffix
+
+        logger.info(f"Saving file to {new_path}")
+        save_file(loaded, Path(new_path))
+
+
+
 def checkpoint_to_pipeline(
     checkpoint: Path,
     target_dir: Optional[Path] = None,

@@ -109,6 +109,7 @@ class ModelConfig(BaseSettings):
     prompt_map: Dict[str,str]= Field({})
     tail_prompt: str = ""
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
+    is_single_prompt_mode : bool = Field(False)
     lora_map: Dict[str,float]= Field({})
     ip_adapter_map: Dict[str,Any]= Field({})
     controlnet_map: Dict[str,Any]= Field({})

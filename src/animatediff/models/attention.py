@@ -124,7 +124,9 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         # shenanigans for motion module
         video_length = hidden_states.shape[2]
         hidden_states = rearrange(hidden_states, "b c f h w -> (b f) c h w")
-        encoder_hidden_states = repeat(encoder_hidden_states, "b n c -> (b f) n c", f=video_length)
+
+        if encoder_hidden_states.shape[0] < video_length:
+            encoder_hidden_states = repeat(encoder_hidden_states, "b n c -> (b f) n c", f=video_length)
 
         # 1. Input
         batch, _, height, width = hidden_states.shape

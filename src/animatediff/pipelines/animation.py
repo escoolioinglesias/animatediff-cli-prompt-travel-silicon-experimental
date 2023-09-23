@@ -1828,6 +1828,7 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         controlnet_is_loop: bool=True,
         ip_adapter_map: Dict[str, Any] = None,
         interpolation_factor = 1,
+        is_single_prompt_mode = False,
         **kwargs,
     ):
         global C_REF_MODE
@@ -1917,10 +1918,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
         key_last =list(prompt_map.keys())[-1]
 
         def get_current_prompt_embeds_from_text(
-                context: List[int] = None,
+                center_frame = None,
                 video_length : int = 0
                 ):
-            center_frame = context[len(context)//2]
 
             key_prev = key_last
             key_next = key_first
@@ -1980,10 +1980,9 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             im_key_last =list(ip_im_map.keys())[-1]
 
         def get_current_prompt_embeds_from_image(
-                context: List[int] = None,
+                center_frame = None,
                 video_length : int = 0
                 ):
-            center_frame = context[len(context)//2]
 
             key_prev = im_key_last
             key_next = im_key_first
@@ -2009,17 +2008,71 @@ class AnimationPipeline(DiffusionPipeline, TextualInversionLoaderMixin):
             return get_tensor_interpolation_method()( im_prompt_embeds_map[key_prev], im_prompt_embeds_map[key_next], rate)
 
 
-        def get_current_prompt_embeds(
+        def get_current_prompt_embeds_single(
                 context: List[int] = None,
                 video_length : int = 0
                 ):
-            text_emb = get_current_prompt_embeds_from_text(context, video_length)
+            center_frame = context[len(context)//2]
+            text_emb = get_current_prompt_embeds_from_text(center_frame, video_length)
             if self.ip_adapter:
-                image_emb = get_current_prompt_embeds_from_image(context, video_length)
+                image_emb = get_current_prompt_embeds_from_image(center_frame, video_length)
                 return torch.cat([text_emb,image_emb], dim=1)
             else:
                 return text_emb
 
+        def get_current_prompt_embeds_multi(
+                context: List[int] = None,
+                video_length : int = 0
+                ):
+
+            neg = []
+            pos = []
+            for c in context:
+                t = get_current_prompt_embeds_from_text(c, video_length)
+                if do_classifier_free_guidance:
+                    negative, positive = t.chunk(2, 0)
+                    neg.append(negative)
+                    pos.append(positive)
+                else:
+                    pos.append(t)
+
+            if do_classifier_free_guidance:
+                neg = torch.cat(neg)
+                pos = torch.cat(pos)
+                text_emb = torch.cat([neg , pos])
+            else:
+                pos = torch.cat(pos)
+                text_emb = pos
+
+            if self.ip_adapter == None:
+                return text_emb
+
+            neg = []
+            pos = []
+            for c in context:
+                im = get_current_prompt_embeds_from_image(c, video_length)
+                if do_classifier_free_guidance:
+                    negative, positive = im.chunk(2, 0)
+                    neg.append(negative)
+                    pos.append(positive)
+                else:
+                    pos.append(im)
+
+            if do_classifier_free_guidance:
+                neg = torch.cat(neg)
+                pos = torch.cat(pos)
+                image_emb = torch.cat([neg , pos])
+            else:
+                pos = torch.cat(pos)
+                image_emb = pos
+
+            return torch.cat([text_emb,image_emb], dim=1)
+
+        def get_current_prompt_embeds(
+                context: List[int] = None,
+                video_length : int = 0
+                ):
+            return get_current_prompt_embeds_single(context,video_length) if is_single_prompt_mode else get_current_prompt_embeds_multi(context,video_length)
 
         # 3.5 Prepare controlnet variables
 

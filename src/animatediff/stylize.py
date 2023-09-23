@@ -117,7 +117,7 @@ def create_config(
             max=120,
             help="Interval of frames to be predicted",
         ),
-    ] = 16,
+    ] = 1,
     general_threshold: Annotated[
         float,
         typer.Option(

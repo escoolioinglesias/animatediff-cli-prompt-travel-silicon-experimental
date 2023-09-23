@@ -752,6 +752,7 @@ def run_inference(
     no_frames :bool = False,
     ip_adapter_map: Dict[str,Any] = None,
     output_map: Dict[str,Any] = None,
+    is_single_prompt_mode: bool = False,
 ):
     out_dir = Path(out_dir)  # ensure out_dir is a Path
 
@@ -779,14 +780,15 @@ def run_inference(
         controlnet_max_models_on_vram=controlnet_map["max_models_on_vram"] if "max_models_on_vram" in controlnet_map else 99,
         controlnet_is_loop = controlnet_map["is_loop"] if "is_loop" in controlnet_map else True,
         ip_adapter_map=ip_adapter_map,
-        interpolation_factor=1
+        interpolation_factor=1,
+        is_single_prompt_mode=is_single_prompt_mode,
     )
 
     logger.info("Generation complete, saving...")
 
     # Trim and clean up the prompt for filename use
     prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
-    prompt_str = "_".join((prompt_tags[:6]))
+    prompt_str = "_".join((prompt_tags[:6]))[:50]
 
     frame_dir = out_dir.joinpath(f"{idx:02d}-{seed}")
     out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}")
@@ -1047,7 +1049,7 @@ def run_upscale(
 
     # Trim and clean up the prompt for filename use
     prompt_tags = [re_clean_prompt.sub("", tag).strip().replace(" ", "-") for tag in prompt_map[list(prompt_map.keys())[0]].split(",")]
-    prompt_str = "_".join((prompt_tags[:6]))
+    prompt_str = "_".join((prompt_tags[:6]))[:50]
 
     # generate the output filename and save the video
     out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}.gif")

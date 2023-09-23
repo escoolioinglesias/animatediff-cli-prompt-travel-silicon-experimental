@@ -1,3 +1,4 @@
+import logging
 import math
 from dataclasses import dataclass
 from typing import Optional
@@ -10,6 +11,7 @@ from diffusers.utils import BaseOutput, maybe_allow_in_graph
 from einops import rearrange, repeat
 from torch import Tensor, nn
 
+logger = logging.getLogger(__name__)
 
 def zero_module(module):
     # Zero out the parameters of a module and return it.
@@ -284,11 +286,12 @@ class VersatileAttention(Attention):
             if self.pos_encoder is not None:
                 hidden_states = self.pos_encoder(hidden_states)
 
-            encoder_hidden_states = (
-                repeat(encoder_hidden_states, "b n c -> (b d) n c", d=d)
-                if encoder_hidden_states is not None
-                else encoder_hidden_states
-            )
+            if encoder_hidden_states and encoder_hidden_states.shape[0] < d:
+                encoder_hidden_states = (
+                        repeat(encoder_hidden_states, "b n c -> (b d) n c", d=d)
+                        if encoder_hidden_states is not None
+                        else encoder_hidden_states
+                    )
         else:
             raise NotImplementedError
 
