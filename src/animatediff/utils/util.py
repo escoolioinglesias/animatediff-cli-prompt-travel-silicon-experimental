@@ -308,7 +308,22 @@ def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset
 
 
 def is_v2_motion_module(motion_module_path:Path):
-    return (motion_module_path.stem in ["mm_sd_v15_v2"] )     # TODO Decent identification method
+    if motion_module_path.suffix == ".safetensors":
+        from safetensors.torch import load_file
+        loaded = load_file(motion_module_path, "cpu")
+    else:
+        from torch import load
+        loaded = load(motion_module_path, "cpu")
+
+    is_v2 = "mid_block.motion_modules.0.temporal_transformer.norm.bias" in loaded
+
+    loaded = None
+    torch.cuda.empty_cache()
+
+    logger.info(f"{is_v2=}")
+
+    return is_v2
+
 
 
 

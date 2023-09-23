@@ -52,12 +52,8 @@ def fix_checkpoint_if_needed(checkpoint: Path, debug:bool):
             logger.info(f"{a} {loaded[a].shape}")
 
     if debug:
-        import torch
         from safetensors.torch import load_file, save_file
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        loaded = load_file(checkpoint, device)
+        loaded = load_file(checkpoint, "cpu")
 
         dump(loaded)
 
@@ -98,9 +94,6 @@ def fix_checkpoint_if_needed(checkpoint: Path, debug:bool):
             "first_stage_model.encoder.mid.attn_1.to_v.weight":"first_stage_model.encoder.mid.attn_1.v.weight",
         }
 
-
-        #dump(loaded)
-
         for a in list(loaded.keys()):
             if a in convert_table_bias:
                 new_key = convert_table_bias[a]
@@ -111,8 +104,6 @@ def fix_checkpoint_if_needed(checkpoint: Path, debug:bool):
                 if len(item.shape) == 2:
                     item = item.unsqueeze(dim=-1).unsqueeze(dim=-1)
                 loaded[new_key] = item
-
-        #dump(loaded)
 
         new_path = str(checkpoint.parent / checkpoint.stem) + "_fixed"+checkpoint.suffix
 
