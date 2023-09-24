@@ -79,8 +79,7 @@ It seems to work surprisingly well!
         "56": "((holy magic spell, holy background))",
         "64": "((star magic spell, star background))",
         "72": "((plant magic spell, plant background))",
-        "80": "((meteor magic spell, meteor background))",
-        "128": "((laughing, smile)), face close-up"
+        "80": "((meteor magic spell, meteor background))"
     },
 ```
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/31a5827d-e551-4937-8b67-51747a92d14c" muted="false"></video></div>
