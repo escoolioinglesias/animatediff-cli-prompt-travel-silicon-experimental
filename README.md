@@ -28,15 +28,6 @@ It seems to work surprisingly well!
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/d9d300a9-1107-4a3b-a1f1-3245b49dde10" muted="false"></video></div>
 <br>
 
-- 1.prompt + lora
-- 2.prompt + lora + IP-Adapter Plus Face(scale 0.5)
-- input image
-
-![face00001](https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/132afeeb-7483-4274-b11a-60158873bad9)
-
-<div height="512"><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/b20aec38-3ec9-4535-81a3-bd109a09ea52" muted="false"></video></div>
-<br>
-
 
 - controlnet_openpose + controlnet_softedge
 - input frames for controlnet(0,16,32 frames)
@@ -46,16 +37,54 @@ It seems to work surprisingly well!
 <div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/50aa9d0d-15b6-4c84-a497-8d020d3bdb7c" muted="false"></video></div>
 <br>
 
-- standing -> walking -> spider webs:2.0 -> sitting
-- Left : output of "animatediff generate -c config/prompts/prompt_travel.json -W 512 -H 768 -L128 -C 16"
-- Right : output of "animatediff tile-upscale PATH_TO_TARGET_FRAME_DIRECTORY -W 512"
-<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/bb72d69e-8f00-434f-af85-497b0f574cef" muted="false"></video></div>
+- In the latest version, generation can now be controlled more precisely through prompts.
+- sample 1
+```json
+    "prompt_fixed_ratio": 0.8,
+    "head_prompt": "1girl, wizard, circlet, earrings, jewelry, purple hair,",
+    "prompt_map": {
+        "0": "(standing,full_body),blue_sky, town",
+        "8": "(sitting,full_body),rain, town",
+        "16": "(standing,full_body),blue_sky, woods",
+        "24": "(upper_body), beach",
+        "32": "(upper_body, smile)",
+        "40": "(upper_body, angry)",
+        "48": "(upper_body, smile, from_above)",
+        "56": "(upper_body, angry, from_side)",
+        "64": "(upper_body, smile, from_below)",
+        "72": "(upper_body, angry, from_behind, looking at viewer)",
+        "80": "face,looking at viewer",
+        "88": "face,looking at viewer, closed_eyes",
+        "96": "face,looking at viewer, open eyes, open_mouth",
+        "104": "face,looking at viewer, closed_eyes, closed_mouth",
+        "112": "face,looking at viewer, open eyes,eyes, open_mouth, tongue, smile, laughing",
+        "120": "face,looking at viewer, eating, bowl,chopsticks,holding,food"
+    },
+```
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/c4de4b87-f302-4d61-98c7-9607dece386f" muted="false"></video></div>
 <br>
 
-- at the beach -> sitting at a table, in a restaurant, (burger on table:1.2) -> (drinking beer:1.2), outdoors, sunny -> (holding a cat:1.2), outdoors, sunny
-<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/35fcf116-c4fd-4394-b9d0-7cad457afdbc" muted="false"></video></div>
+- sample 2
+```json
+    "prompt_fixed_ratio": 1.0,
+    "head_prompt": "1girl, wizard, circlet, earrings, jewelry, purple hair,",
+    "prompt_map": {
+        "0": "",
+        "8": "((fire magic spell, fire background))",
+        "16": "((ice magic spell, ice background))",
+        "24": "((thunder magic spell, thunder background))",
+        "32": "((skull magic spell, skull background))",
+        "40": "((wind magic spell, wind background))",
+        "48": "((stone magic spell, stone background))",
+        "56": "((holy magic spell, holy background))",
+        "64": "((star magic spell, star background))",
+        "72": "((plant magic spell, plant background))",
+        "80": "((meteor magic spell, meteor background))",
+        "128": "((laughing, smile)), face close-up"
+    },
+```
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/31a5827d-e551-4937-8b67-51747a92d14c" muted="false"></video></div>
 <br>
-
 
 ### Installation(for windows)
 Same as the original animatediff-cli  
