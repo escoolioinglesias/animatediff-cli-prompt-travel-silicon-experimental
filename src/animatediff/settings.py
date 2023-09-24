@@ -105,6 +105,7 @@ class ModelConfig(BaseSettings):
     steps: int = 25  # Number of inference steps to run
     guidance_scale: float = 7.5  # CFG scale to use
     clip_skip: int = 1  # skip the last N-1 layers of the CLIP text encoder
+    prompt_fixed_ratio: float = 0.5
     head_prompt: str = ""
     prompt_map: Dict[str,str]= Field({})
     tail_prompt: str = ""

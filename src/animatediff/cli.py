@@ -361,6 +361,8 @@ def generate(
     if model_config.tail_prompt:
         model_config.tail_prompt = replace_wild_card(model_config.tail_prompt, wild_card_dir)
 
+    model_config.prompt_fixed_ratio = max(min(1.0, model_config.prompt_fixed_ratio),0)
+
     # save config to output directory
     logger.info("Saving prompt config to output directory")
     save_config_path = save_dir.joinpath("prompt.json")
@@ -399,6 +401,17 @@ def generate(
                         pr = pr + "," + model_config.tail_prompt
 
                     prompt_map[int(k)]=pr
+
+            prompt_map = dict(sorted(prompt_map.items()))
+            key_list = list(prompt_map.keys())
+#            for k0,k1 in zip(key_list,key_list[1:]+key_list[0:1]):
+            for k0,k1 in zip(key_list,key_list[1:]+[length]):
+                k05 = k0 + round((k1-k0) * model_config.prompt_fixed_ratio)
+                if k05 == k1:
+                    k05 -= 1
+                if k05 != k0:
+                    prompt_map[k05] = prompt_map[k0]
+
 
             output = run_inference(
                 pipeline=g_pipeline,
