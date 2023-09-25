@@ -345,6 +345,12 @@ def create_pipeline(
     else:
         logger.info("Using base model weights (no checkpoint/LoRA)")
 
+    if model_config.vae_path:
+        vae_path = data_dir.joinpath(model_config.vae_path)
+        logger.info(f"Loading vae from {vae_path}")
+        vae = AutoencoderKL.from_pretrained(vae_path)
+
+
     # enable xformers if available
     if use_xformers:
         logger.info("Enabling xformers memory-efficient attention")
