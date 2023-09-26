@@ -20,14 +20,11 @@ from typing import Optional
 
 import requests
 import torch
-from diffusers.models import (
-    AutoencoderKL,
-    ControlNetModel,
-    PriorTransformer,
-    UNet2DConditionModel,
-)
+from diffusers.models import (AutoencoderKL, ControlNetModel, PriorTransformer,
+                              UNet2DConditionModel)
 from diffusers.schedulers import DDIMScheduler
-from diffusers.utils import is_accelerate_available, is_omegaconf_available, is_safetensors_available, logging
+from diffusers.utils import (is_accelerate_available, is_omegaconf_available,
+                             is_safetensors_available, logging)
 from transformers import CLIPTextConfig, CLIPTextModel
 
 if is_accelerate_available():
@@ -614,14 +611,19 @@ def convert_ldm_unet_checkpoint(
     return new_checkpoint
 
 
-def convert_ldm_vae_checkpoint(checkpoint, config):
+def convert_ldm_vae_checkpoint(checkpoint, config, is_extract=False):
     # extract state dict for VAE
     vae_state_dict = {}
-    vae_key = "first_stage_model."
-    keys = list(checkpoint.keys())
-    for key in keys:
-        if key.startswith(vae_key):
-            vae_state_dict[key.replace(vae_key, "")] = checkpoint.get(key)
+    if is_extract:
+        vae_key = "first_stage_model."
+        keys = list(checkpoint.keys())
+        for key in keys:
+            if is_extract:
+                if key.startswith(vae_key):
+                    vae_state_dict[key.replace(vae_key, "")] = checkpoint.get(key)
+    else:
+        vae_state_dict = checkpoint
+
 
     new_checkpoint = {}
 

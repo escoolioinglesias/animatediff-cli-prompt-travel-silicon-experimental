@@ -113,6 +113,7 @@ class ModelConfig(BaseSettings):
     n_prompt: list[str] = Field([])  # Anti-prompt(s) to use
     is_single_prompt_mode : bool = Field(False)
     lora_map: Dict[str,float]= Field({})
+    motion_lora_map: Dict[str,float]= Field({})
     ip_adapter_map: Dict[str,Any]= Field({})
     controlnet_map: Dict[str,Any]= Field({})
     upscale_config: Dict[str,Any]= Field({})

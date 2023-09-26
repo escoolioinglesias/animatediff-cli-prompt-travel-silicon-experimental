@@ -31,6 +31,7 @@ from animatediff.pipelines.pipeline_controlnet_img2img_reference import \
     StableDiffusionControlNetImg2ImgReferencePipeline
 from animatediff.schedulers import get_scheduler
 from animatediff.settings import InferenceConfig, ModelConfig
+from animatediff.utils.convert_from_ckpt import convert_ldm_vae_checkpoint
 from animatediff.utils.convert_lora_safetensor_to_diffusers import convert_lora
 from animatediff.utils.model import (ensure_motion_modules,
                                      get_checkpoint_weights)
@@ -73,7 +74,46 @@ def load_safetensors_lora(text_encoder, unet, lora_path, alpha=0.75, is_animated
     lora_network.load_state_dict(sd, False)
     lora_network.merge_to(alpha)
 
+def load_tensors(path:Path,framework="pt",device="cpu"):
+    tensors = {}
+    if path.suffix == ".safetensors":
+        from safetensors import safe_open
+        with safe_open(path, framework=framework, device=device) as f:
+            for k in f.keys():
+                tensors[k] = f.get_tensor(k) # loads the full tensor given a key
+    else:
+        from torch import load
+        tensors = load(path, device)
+        if "state_dict" in tensors:
+            tensors = tensors["state_dict"]
+    return tensors
 
+def load_motion_lora(unet, lora_path:Path, alpha=1.0):
+    state_dict = load_tensors(lora_path)
+
+    # directly update weight in diffusers model
+    for key in state_dict:
+        # only process lora down key
+        if "up." in key: continue
+
+        up_key    = key.replace(".down.", ".up.")
+        model_key = key.replace("processor.", "").replace("_lora", "").replace("down.", "").replace("up.", "")
+        model_key = model_key.replace("to_out.", "to_out.0.")
+        layer_infos = model_key.split(".")[:-1]
+
+        curr_layer = unet
+        try:
+            while len(layer_infos) > 0:
+                temp_name = layer_infos.pop(0)
+                curr_layer = curr_layer.__getattr__(temp_name)
+        except:
+            logger.info(f"{model_key} not found")
+            continue
+
+
+        weight_down = state_dict[key]
+        weight_up   = state_dict[up_key]
+        curr_layer.weight.data += alpha * torch.mm(weight_up, weight_down).to(curr_layer.weight.data.device)
 
 
 class SegPreProcessor:
@@ -348,7 +388,13 @@ def create_pipeline(
     if model_config.vae_path:
         vae_path = data_dir.joinpath(model_config.vae_path)
         logger.info(f"Loading vae from {vae_path}")
-        vae = AutoencoderKL.from_pretrained(vae_path)
+
+        if vae_path.is_dir():
+            vae = AutoencoderKL.from_pretrained(vae_path)
+        else:
+            tensors = load_tensors(vae_path)
+            tensors = convert_ldm_vae_checkpoint(tensors, vae.config)
+            vae.load_state_dict(tensors)
 
 
     # enable xformers if available
@@ -364,6 +410,13 @@ def create_pipeline(
             logger.info(f"alpha = {model_config.lora_map[l]}")
             load_safetensors_lora(text_encoder, unet, lora_path, alpha=model_config.lora_map[l])
 
+    # motion lora
+    for l in model_config.motion_lora_map:
+        lora_path = data_dir.joinpath(l)
+        if lora_path.is_file():
+            logger.info(f"Loading motion lora {lora_path}")
+            logger.info(f"alpha = {model_config.motion_lora_map[l]}")
+            load_motion_lora(unet, lora_path, alpha=model_config.motion_lora_map[l])
 
     logger.info("Creating AnimationPipeline...")
     pipeline = AnimationPipeline(
