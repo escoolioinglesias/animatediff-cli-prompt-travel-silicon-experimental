@@ -114,6 +114,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
 {
   "name": "sample",
   "path": "share/Stable-diffusion/mistoonAnime_v20.safetensors",  # Specify Checkpoint as a path relative to /animatediff-cli/data
+  "vae_path":"share/VAE/vae-ft-mse-840000-ema-pruned.ckpt",       # Specify vae as a path relative to /animatediff-cli/data
   "motion_module": "models/motion-module/mm_sd_v14.ckpt",         # Specify motion module as a path relative to /animatediff-cli/data
   "compile": false,
   "seed": [
@@ -137,6 +138,10 @@ Almost same as the original animatediff-cli, but with a slight change in config 
   "lora_map": {             # "PATH_TO_LORA" : STRENGTH format
     "share/Lora/muffet_v2.safetensors" : 1.0,                     # Specify lora as a path relative to /animatediff-cli/data
     "share/Lora/add_detail.safetensors" : 1.0                     # Lora support is limited. Not all formats can be used!!!
+  },
+  "motion_lora_map": {      # "PATH_TO_LORA" : STRENGTH format
+    "models/motion_lora/v2_lora_RollingAnticlockwise.ckpt":0.5,   # Currently, the officially distributed lora seems to work only for v2 motion modules (mm_sd_v15_v2.ckpt).
+    "models/motion_lora/v2_lora_ZoomIn.ckpt":0.5
   },
   "ip_adapter_map": {       # config for ip-adapter
       # enable/disable (important)
