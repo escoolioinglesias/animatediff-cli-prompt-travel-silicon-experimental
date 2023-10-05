@@ -852,43 +852,7 @@ def run_inference(
     frame_dir = out_dir.joinpath(f"{idx:02d}-{seed}")
     out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}")
 
-    output_format = "gif"
-    output_fps = 8
-    if output_map:
-        output_format = output_map["format"] if "format" in output_map else output_format
-        output_fps = output_map["fps"] if "fps" in output_map else output_fps
-        if output_format == "mp4":
-            output_format = "h264"
-
-    if output_format == "gif":
-        out_file = out_file.with_suffix(".gif")
-        if no_frames is not True:
-            save_frames(pipeline_output,frame_dir)
-
-            # generate the output filename and save the video
-            save_video(pipeline_output, out_file, output_fps)
-    else:
-
-        save_frames(pipeline_output,frame_dir)
-        from animatediff.rife.ffmpeg import (FfmpegEncoder, VideoCodec,
-                                             codec_extn)
-
-        out_file = out_file.with_suffix( f".{codec_extn(output_format)}" )
-
-        logger.info("Creating ffmpeg encoder...")
-        encoder = FfmpegEncoder(
-            frames_dir=frame_dir,
-            out_file=out_file,
-            codec=output_format,
-            in_fps=output_fps,
-            out_fps=output_fps,
-            lossless=False,
-            param= output_map["encode_param"] if "encode_param" in output_map else {}
-        )
-        logger.info("Encoding interpolated frames with ffmpeg...")
-        result = encoder.encode()
-        logger.debug(f"ffmpeg result: {result}")
-
+    save_output( pipeline_output, frame_dir, out_file, output_map, no_frames, save_frames, save_video )
 
     logger.info(f"Saved sample to {out_file}")
     return pipeline_output
@@ -913,6 +877,8 @@ def run_upscale(
     use_controlnet_tile: bool = False,
     use_controlnet_line_anime: bool = False,
     use_controlnet_ip2p: bool = False,
+    no_frames:bool = False,
+    output_map: Dict[str,Any] = None,
 ):
     from animatediff.utils.lpw_stable_diffusion import lpw_encode_prompt
 
@@ -1111,11 +1077,11 @@ def run_upscale(
     prompt_str = "_".join((prompt_tags[:6]))[:50]
 
     # generate the output filename and save the video
-    out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}.gif")
+    out_file = out_dir.joinpath(f"{idx:02d}_{seed}_{prompt_str}")
 
-    out_images[0].save(
-        fp=out_file, format="GIF", append_images=out_images[1:], save_all=True, duration=(1 / 8 * 1000), loop=0
-    )
+    frame_dir = out_dir.joinpath(f"{idx:02d}-{seed}-upscaled")
+
+    save_output( out_images, frame_dir, out_file, output_map, no_frames, save_imgs, None )
 
     logger.info(f"Saved sample to {out_file}")
 

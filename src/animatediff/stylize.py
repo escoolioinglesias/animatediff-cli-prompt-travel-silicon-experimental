@@ -9,11 +9,13 @@ from typing import Annotated, Optional
 import torch
 import typer
 from PIL import Image
+from tqdm.rich import tqdm
 
 from animatediff import __version__, get_dir
 from animatediff.settings import ModelConfig, get_model_config
 from animatediff.utils.tagger import get_labels
-from animatediff.utils.util import extract_frames, path_from_cwd
+from animatediff.utils.util import (extract_frames, get_resized_image,
+                                    path_from_cwd, prepare_softsplat)
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +236,11 @@ def create_config(
       "control_scale_list":[]
     }
 
+    for m in model_config.controlnet_map:
+        if isinstance(model_config.controlnet_map[m] ,dict):
+            if "control_scale_list" in model_config.controlnet_map[m]:
+                model_config.controlnet_map[m]["control_scale_list"]=[]
+
     model_config.output = {
         "format" : "mp4",
         "fps" : fps,
@@ -258,6 +265,11 @@ def create_config(
     length = len(glob.glob( os.path.join(controlnet_img_dir.joinpath("controlnet_tile"), "[0-9]*.png"), recursive=False))
 
     model_config.stylize_config={
+        "original_video":{
+            "path":org_movie,
+            "aspect_ratio":aspect_ratio,
+            "offset":offset,
+        },
         "0":{
             "width": width,
             "height": height,
@@ -491,3 +503,124 @@ def generate(
     output_1_dir = output_1_dir.rename(output_1_dir.parent / f"{time_str}_{1:02d}")
 
     logger.info(f"Stylized results are output to {output_1_dir}")
+
+
+
+
+@stylize.command(no_args_is_help=True)
+def interpolate(
+    frame_dir: Annotated[
+        Path,
+        typer.Argument(path_type=Path, file_okay=False, dir_okay=True, exists=True, help="Path to frame dir"),
+    ] = ...,
+    interpolation_multiplier: Annotated[
+        int,
+        typer.Option(
+            "--interpolation_multiplier",
+            "-m",
+            min=1,
+            max=10,
+            help="interpolation_multiplier",
+        ),
+    ] = 1,
+):
+    """Interpolation with original frames. This function does not work well if the shape of the subject is changed from the original video. Large movements can also ruin the picture.(Since this command is experimental, it is better to use other interpolation methods in most cases.)"""
+
+    try:
+        import cupy
+    except:
+        logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        logger.info(f"cupy is required to run interpolate")
+        logger.info(f"Your CUDA version is {torch.version.cuda}")
+        logger.info(f"Please find the installation method of cupy for your CUDA version from the following URL")
+        logger.info(f"https://docs.cupy.dev/en/latest/install.html#installing-cupy-from-pypi")
+        logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        return
+
+    prepare_softsplat()
+
+    time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    config_org = frame_dir.parent.joinpath("prompt.json")
+
+    model_config: ModelConfig = get_model_config(config_org)
+
+    if "original_video" in model_config.stylize_config:
+        org_video = Path(model_config.stylize_config["original_video"]["path"])
+        offset = model_config.stylize_config["original_video"]["offset"]
+        aspect_ratio = model_config.stylize_config["original_video"]["aspect_ratio"]
+    else:
+        logger.warn('!!! The following parameters are required !!!')
+        logger.warn('"stylize_config": {')
+        logger.warn('    "original_video": {')
+        logger.warn('        "path": "C:\\my_movie\\test.mp4",')
+        logger.warn('        "aspect_ratio": 0.6666,')
+        logger.warn('        "offset": 0')
+        logger.warn('    },')
+        raise ValueError('model_config.stylize_config["original_video"] not found')
+
+
+    save_dir = frame_dir.parent.joinpath(f"optflow_{time_str}")
+
+    org_frame_dir = save_dir.joinpath("org_frame")
+    org_frame_dir.mkdir(parents=True, exist_ok=True)
+
+    stylize_frame = sorted(glob.glob( os.path.join(frame_dir, "[0-9]*.png"), recursive=False))
+    stylize_frame_num = len(stylize_frame)
+
+    duration = int(stylize_frame_num / model_config.output["fps"]) + 1
+
+    extract_frames(org_video, model_config.output["fps"] * interpolation_multiplier, org_frame_dir,aspect_ratio,duration,offset)
+
+    W, H = Image.open(stylize_frame[0]).size
+
+    org_frame = sorted(glob.glob( os.path.join(org_frame_dir, "[0-9]*.png"), recursive=False))
+
+    for org in tqdm(org_frame):
+        img = get_resized_image(org, W, H)
+        img.save(org)
+
+    output_dir = save_dir.joinpath("warp_img")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    from animatediff.softmax_splatting.run import estimate2
+
+    for sty1,sty2 in tqdm(zip(stylize_frame,stylize_frame[1:]), total=len(stylize_frame[1:])):
+        sty1 = Path(sty1)
+        sty2 = Path(sty2)
+
+        head = int(sty1.stem)
+
+        sty1_img = Image.open(sty1)
+        sty2_img = Image.open(sty2)
+
+        guide_frames=[org_frame_dir.joinpath(f"{g:08d}.png") for g in range(head*interpolation_multiplier, (head+1)*interpolation_multiplier)]
+
+        guide_frames=[Image.open(g) for g in guide_frames]
+
+        result = estimate2(sty1_img, sty2_img, guide_frames, "data/models/softsplat/softsplat-lf")
+
+        shutil.copy( frame_dir.joinpath(f"{head:08d}.png"), output_dir.joinpath(f"{head*interpolation_multiplier:08d}.png"))
+
+        offset = head*interpolation_multiplier + 1
+        for i, r in enumerate(result):
+            r.save( output_dir.joinpath(f"{offset+i:08d}.png") )
+
+
+    from animatediff.generate import save_output
+
+
+    frames = sorted(glob.glob( os.path.join(output_dir, "[0-9]*.png"), recursive=False))
+    out_images = []
+    for f in frames:
+        out_images.append(Image.open(f))
+
+    model_config.output["fps"] *= interpolation_multiplier
+
+    out_file = save_dir.joinpath(f"01_{model_config.output['fps']}fps")
+    save_output(out_images,output_dir,out_file,model_config.output,True,save_frames=None,save_video=None)
+
+    out_file = save_dir.joinpath(f"00_original")
+    save_output(out_images,org_frame_dir,out_file,model_config.output,True,save_frames=None,save_video=None)
+
+

@@ -1,8 +1,8 @@
 # https://github.com/IDEA-Research/DWPose
 import cv2
 import numpy as np
-
 import onnxruntime
+
 
 def nms(boxes, scores, nms_thr):
     """Single class NMS implemented in Numpy."""
@@ -120,5 +120,7 @@ def inference_detector(session, oriImg):
         iscat = final_cls_inds == 0
         isbbox = [ i and j for (i, j) in zip(isscore, iscat)]
         final_boxes = final_boxes[isbbox]
+    else:
+        return []
 
     return final_boxes

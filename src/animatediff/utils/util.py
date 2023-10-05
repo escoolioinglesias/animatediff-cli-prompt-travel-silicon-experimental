@@ -263,6 +263,29 @@ def prepare_dwpose():
         )
 
 
+
+def prepare_softsplat():
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/softsplat", exist_ok=True)
+    for hub_file in [
+        "softsplat-lf",
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/softsplat" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="s9roll74/softsplat_mirror", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/softsplat"
+        )
+
+
 def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset):
     import ffmpeg
 

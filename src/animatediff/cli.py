@@ -695,11 +695,10 @@ def tile_upscale(
                 use_controlnet_tile=use_controlnet_tile,
                 use_controlnet_line_anime=use_controlnet_line_anime,
                 use_controlnet_ip2p=use_controlnet_ip2p,
+                no_frames = no_frames,
+                output_map = model_config.output,
             )
             torch.cuda.empty_cache()
-            if upscaled_output is not None:
-                if no_frames is not True:
-                    save_imgs(upscaled_output, save_dir.joinpath(f"{gen_num:02d}-{seed}-upscaled"))
 
         # increment the generation number
         gen_num += 1
