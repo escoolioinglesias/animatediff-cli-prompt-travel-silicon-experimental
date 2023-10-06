@@ -87,7 +87,9 @@ It seems to work surprisingly well!
 
 ### Installation(for windows)
 Same as the original animatediff-cli  
-[Python 3.10](https://www.python.org/) and git client must be installed
+[Python 3.10](https://www.python.org/) and git client must be installed  
+(A few days ago, PyTorch 2.1 was released, but it is safer to install the older version until things settle down.   
+[#87](https://github.com/s9roll7/animatediff-cli-prompt-travel/issues/87))
 ```sh
 git clone https://github.com/s9roll7/animatediff-cli-prompt-travel.git
 cd animatediff-cli
