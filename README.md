@@ -106,8 +106,11 @@ python -m pip install -e .[stylize]
 python -m pip install -e .[dwpose]
 # (DWPose is a more powerful version of Openpose)
 ```
-(https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)
-
+(https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)  
+  
+I found a detailed tutorial  
+(https://www.reddit.com/r/StableDiffusion/comments/16vlk9j/guide_to_creating_videos_with/)  
+(https://www.youtube.com/watch?v=7_hh3wOD81s)  
 
 ### How To Use
 Almost same as the original animatediff-cli, but with a slight change in config format.
