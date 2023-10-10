@@ -7,6 +7,11 @@ I added a experimental feature to animatediff-cli to change the prompt in the mi
 It seems to work surprisingly well!
 
 ### Example
+- [A command to stylization with mask has been added](https://github.com/s9roll7/animatediff-cli-prompt-travel#video-stylization-with-mask).
+
+<div><video controls src="https://github.com/s9roll7/animatediff-cli-prompt-travel/assets/118420657/e2ce68b0-f904-4fc3-8d5c-2224b5ffc1d3" muted="false"></video></div>
+<br>
+
 - [A command to automate video stylization has been added](https://github.com/s9roll7/animatediff-cli-prompt-travel#video-stylization).
 - Original / First generation result / Second generation(for upscaling) result
 - It took 4 minutes to generate the first one and about 5 minutes to generate the second one (on rtx 4090).
@@ -92,10 +97,13 @@ Same as the original animatediff-cli
 [#87](https://github.com/s9roll7/animatediff-cli-prompt-travel/issues/87))
 ```sh
 git clone https://github.com/s9roll7/animatediff-cli-prompt-travel.git
-cd animatediff-cli
+cd animatediff-cli-prompt-travel
 py -3.10 -m venv venv
 venv\Scripts\activate.bat
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+set PYTHONUTF8=1
+python -m pip install --upgrade pip
+# Torch installation must be modified to suit the environment. (https://pytorch.org/get-started/previous-versions/)
+python -m pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 python -m pip install -e .
 python -m pip install xformers
 
@@ -105,6 +113,9 @@ python -m pip install -e .[stylize]
 # If you want to use use dwpose as a preprocessor for controlnet_openpose, you will also need
 python -m pip install -e .[dwpose]
 # (DWPose is a more powerful version of Openpose)
+
+# If you want to use the 'stylize create-mask' and 'stylize composite' command, you will also need
+python -m pip install -e .[stylize_mask]
 ```
 (https://www.reddit.com/r/StableDiffusion/comments/157c0wl/working_animatediff_cli_windows_install/)  
   
@@ -288,7 +299,7 @@ Almost same as the original animatediff-cli, but with a slight change in config 
 ```
 
 ```sh
-cd animatediff-cli
+cd animatediff-cli-prompt-travel
 venv\Scripts\activate.bat
 
 # with this setup, it took about a minute to generate in my environment(RTX4090). VRAM usage was 6-7 GB
@@ -315,7 +326,7 @@ animatediff refine PATH_TO_TARGET_FRAME_DIRECTORY -c config/prompts/some_minor_c
 
 #### Video Stylization
 ```sh
-cd animatediff-cli
+cd animatediff-cli-prompt-travel
 venv\Scripts\activate.bat
 
 # If you want to use the 'stylize' command, additional installation required
@@ -338,6 +349,96 @@ animatediff stylize generate STYLYZE_DIR -L 16 -FO 200
 
 # generate
 animatediff stylize generate STYLYZE_DIR
+```
+
+#### Video Stylization with mask
+```sh
+cd animatediff-cli-prompt-travel
+venv\Scripts\activate.bat
+
+# If you want to use the 'stylize create-mask' command, additional installation required
+python -m pip install -e .[stylize_mask]
+
+# [1] create config file from src video
+animatediff stylize create-config YOUR_SRC_MOVIE_FILE.mp4
+```
+```json
+# in prompt.json (generated in [1])
+# [2] write the object you want to mask
+# ex.) If you want to mask a person
+    "stylize_config": {
+        "create_mask": [
+            "person"
+        ],
+        "composite": {
+```
+```json
+# ex.) person, dog, cat
+    "stylize_config": {
+        "create_mask": [
+            "person", "dog", "cat"
+        ],
+        "composite": {
+```
+```json
+# ex.) boy, girl
+    "stylize_config": {
+        "create_mask": [
+            "boy", "girl"
+        ],
+        "composite": {
+```
+```sh
+# [3] generate mask
+animatediff stylize create-mask STYLYZE_DIR
+
+# If you have less than 12GB of vram, specify low vram mode
+animatediff stylize create-mask STYLYZE_DIR -lo
+
+# The foreground is output to the following directory (FG_STYLYZE_DIR)
+# STYLYZE_DIR/fg_00_timestamp_str
+# The background is output to the following directory (BG_STYLYZE_DIR)
+# STYLYZE_DIR/bg_timestamp_str
+
+# [4] generate foreground
+animatediff stylize generate FG_STYLYZE_DIR
+
+# Same as normal generate.
+# The default is controlnet_tile, so if you want to make a big style change,
+# such as changing the character, change to openpose, etc.
+
+# Of course, you can also generate the background here.
+```
+```json
+# in prompt.json (generated in [1])
+# [5] composite setup
+# enter the directory containing the frames generated in [4] in "fg_list".
+# In the "mask_prompt" field, write the object you want to extract from the generated foreground frame.
+# If you prepared the mask yourself, specify it in mask_path. If a valid path is set, use it.
+# If the shape has not changed when the foreground is generated, FG_STYLYZE_DIR/00_mask can be used
+# enter the directory containing the background frames separated in [3] in "bg_frame_dir".
+        "composite": {
+            "fg_list": [
+                {
+                    "path": "FG_STYLYZE_DIR/time_stamp_str/00-341774366206100",
+                    "mask_path": " absolute path to mask dir (this is optional) ",
+                    "mask_prompt": "person"
+                },
+                {
+                    "path": " absolute path to frame dir ",
+                    "mask_path": " absolute path to mask dir (this is optional) ",
+                    "mask_prompt": "cat"
+                }
+            ],
+            "bg_frame_dir": "BG_STYLYZE_DIR/00_controlnet_image/controlnet_tile",
+            "hint": ""
+        },
+```
+```sh
+# [6] composite
+animatediff stylize composite STYLYZE_DIR
+
+# See help for detailed options.
 ```
 
 
@@ -378,10 +479,20 @@ animatediff tile-upscale output/2023-08-25T20-00-00-sample-mistoonanime_v20/00-3
 - [ControlNet](https://github.com/lllyasviel/ControlNet)
 - [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter)
 - [DWPose](https://github.com/IDEA-Research/DWPose)
+- [softmax-splatting](https://github.com/sniklaus/softmax-splatting)
+- [sam-hq](https://github.com/SysCV/sam-hq)
+- [Grounded-Segment-Anything](https://github.com/IDEA-Research/Grounded-Segment-Anything)
+- [ProPainter](https://github.com/sczhou/ProPainter)
 
-Below is the original readme.
+<br>
+<br>
+<br>
+<br>
+<br>
 
-----------------------------------------------------------
+Below is the original readme.  
+
+----------------------------------------------------------  
 
 
 # animatediff
