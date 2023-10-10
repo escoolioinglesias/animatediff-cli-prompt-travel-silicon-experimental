@@ -286,7 +286,7 @@ def prepare_softsplat():
         )
 
 
-def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset):
+def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset, size_of_short_edge=-1):
     import ffmpeg
 
     probe = ffmpeg.probe(movie_file_path)
@@ -304,6 +304,18 @@ def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset
     elif offset > 0:
         node = node.trim(start=offset).setpts('PTS-STARTPTS')
 
+    if size_of_short_edge != -1:
+        if width < height:
+            r = height / width
+            width = size_of_short_edge
+            height = int( (size_of_short_edge * r)//2 * 2)
+            node = node.filter('scale', size_of_short_edge, -1)
+        else:
+            r = width / height
+            height = size_of_short_edge
+            width = int( (size_of_short_edge * r)//2 * 2)
+            node = node.filter('scale', -1, size_of_short_edge)
+
     if aspect_ratio > 0:
         # aspect ratio (width / height)
         ww = round(height * aspect_ratio)
@@ -318,6 +330,8 @@ def extract_frames(movie_file_path, fps, out_dir, aspect_ratio, duration, offset
             y = (height - hh)//2
             w = width
             h = hh
+        w = int(w // 2 * 2)
+        h = int(h // 2 * 2)
         logger.info(f"crop to {w=},{h=}")
         node = node.crop(x, y, w, h)
 
@@ -373,3 +387,60 @@ def slerp(
         return (1.0 - t) * v0 + t * v1
     omega = dot.acos()
     return (((1.0 - t) * omega).sin() * v0 + (t * omega).sin() * v1) / omega.sin()
+
+
+
+def prepare_sam_hq(low_vram):
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/SAM", exist_ok=True)
+    for hub_file in [
+        "sam_hq_vit_l.pth" if not low_vram else "sam_hq_vit_b.pth"
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/SAM" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="lkeab/hq-sam", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/SAM"
+        )
+
+def prepare_groundingDINO():
+    import os
+    from pathlib import PurePosixPath
+
+    from huggingface_hub import hf_hub_download
+
+    os.makedirs("data/models/GroundingDINO", exist_ok=True)
+    for hub_file in [
+        "groundingdino_swinb_cogcoor.pth",
+    ]:
+        path = Path(hub_file)
+
+        saved_path = "data/models/GroundingDINO" / path
+
+        if os.path.exists(saved_path):
+            continue
+
+        hf_hub_download(
+            repo_id="ShilongLiu/GroundingDINO", subfolder=PurePosixPath(path.parent), filename=PurePosixPath(path.name), local_dir="data/models/GroundingDINO"
+        )
+
+
+def prepare_propainter():
+    import os
+
+    import git
+
+    if os.path.isdir("src/animatediff/repo/ProPainter"):
+        if os.listdir("src/animatediff/repo/ProPainter"):
+            return
+
+    repo = git.Repo.clone_from(url="https://github.com/sczhou/ProPainter", to_path="src/animatediff/repo/ProPainter", no_checkout=True )
+    repo.git.checkout("a8a5827ca5e7e8c1b4c360ea77cbb2adb3c18370")

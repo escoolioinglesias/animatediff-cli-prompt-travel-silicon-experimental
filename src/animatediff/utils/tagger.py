@@ -42,9 +42,13 @@ def smart_resize(img, size):
 
 
 class Tagger:
-    def __init__(self, general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format):
+    def __init__(self, general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format,is_cpu):
         prepare_wd14tagger()
-        self.model = onnxruntime.InferenceSession("data/models/WD14tagger/model.onnx", providers=['CUDAExecutionProvider','CPUExecutionProvider'])
+#        self.model = onnxruntime.InferenceSession("data/models/WD14tagger/model.onnx", providers=['CUDAExecutionProvider','CPUExecutionProvider'])
+        if is_cpu:
+            self.model = onnxruntime.InferenceSession("data/models/WD14tagger/model.onnx", providers=['CPUExecutionProvider'])
+        else:
+            self.model = onnxruntime.InferenceSession("data/models/WD14tagger/model.onnx", providers=['CUDAExecutionProvider'])
         df = pd.read_csv("data/models/WD14tagger/selected_tags.csv")
         self.tag_names = df["name"].tolist()
         self.rating_indexes = list(np.where(df["category"] == 9)[0])
@@ -124,7 +128,10 @@ class Tagger:
         return prompt
 
 
-def get_labels(frame_dir, interval, general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format):
+def get_labels(frame_dir, interval, general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format, is_cpu =False):
+
+    import torch
+
     result = {}
     if os.path.isdir(frame_dir):
         png_list = sorted(glob.glob( os.path.join(frame_dir, "[0-9]*.png"), recursive=False))
@@ -134,20 +141,20 @@ def get_labels(frame_dir, interval, general_threshold, character_threshold, igno
             basename_without_ext = os.path.splitext(os.path.basename(png_path))[0]
             png_map[int(basename_without_ext)] = png_path
 
-        tagger = Tagger(general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format)
+        with torch.no_grad():
+            tagger = Tagger(general_threshold, character_threshold, ignore_tokens, with_confidence, is_danbooru_format, is_cpu)
 
-        for i in tqdm(range(0, len(png_list), interval ), desc=f"WD14tagger"):
-            path = png_map[i]
+            for i in tqdm(range(0, len(png_list), interval ), desc=f"WD14tagger"):
+                path = png_map[i]
 
-            #logger.info(f"{path=}")
+                #logger.info(f"{path=}")
 
-            result[str(i)] = tagger(
-                image= Image.open(path)
-            )
+                result[str(i)] = tagger(
+                    image= Image.open(path)
+                )
 
-        tagger = None
+            tagger = None
 
-        import torch
         torch.cuda.empty_cache()
 
     return result

@@ -15,7 +15,9 @@ from animatediff import __version__, get_dir
 from animatediff.settings import ModelConfig, get_model_config
 from animatediff.utils.tagger import get_labels
 from animatediff.utils.util import (extract_frames, get_resized_image,
-                                    path_from_cwd, prepare_softsplat)
+                                    path_from_cwd, prepare_groundingDINO,
+                                    prepare_propainter, prepare_sam_hq,
+                                    prepare_softsplat)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,16 @@ def create_config(
             help="aspect ratio (width / height). (ex. 512 / 512 = 1.0 , 512 / 768 = 0.6666 , 768 / 512 = 1.5) -1 means that the aspect ratio of the input video is used as is.",
         ),
     ] = -1,
+    size_of_short_edge: Annotated[
+        int,
+        typer.Option(
+            "--short-edge",
+            "-sh",
+            min=100,
+            max=1024,
+            help="size of short edge",
+        ),
+    ] = 512,
     predicte_interval: Annotated[
         int,
         typer.Option(
@@ -158,7 +170,6 @@ def create_config(
             help="danbooru token format or not. ex. 'bandaid_on_leg, short_hair' -> 'bandaid on leg, short hair'",
         ),
     ] = False,
-
 ):
     """Create a config file for video stylization"""
     is_danbooru_format = not is_no_danbooru_format
@@ -171,6 +182,7 @@ def create_config(
     logger.info(f"{duration=}")
     logger.info(f"{offset=}")
     logger.info(f"{aspect_ratio=}")
+    logger.info(f"{size_of_short_edge=}")
     logger.info(f"{predicte_interval=}")
     logger.info(f"{general_threshold=}")
     logger.info(f"{character_threshold=}")
@@ -192,7 +204,7 @@ def create_config(
         c_dir = controlnet_img_dir.joinpath(c)
         c_dir.mkdir(parents=True, exist_ok=True)
 
-    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"), aspect_ratio, duration, offset)
+    extract_frames(org_movie, fps, controlnet_img_dir.joinpath("controlnet_tile"), aspect_ratio, duration, offset, size_of_short_edge)
 
     shutil.copytree(controlnet_img_dir.joinpath("controlnet_tile"), controlnet_img_dir.joinpath("controlnet_ip2p"), dirs_exist_ok=True)
 
@@ -208,7 +220,8 @@ def create_config(
         character_threshold=character_threshold,
         ignore_tokens=black_list,
         with_confidence=with_confidence,
-        is_danbooru_format=is_danbooru_format
+        is_danbooru_format=is_danbooru_format,
+        is_cpu = False,
     )
 
 
@@ -269,6 +282,25 @@ def create_config(
             "path":org_movie,
             "aspect_ratio":aspect_ratio,
             "offset":offset,
+        },
+        "create_mask": [
+            "person"
+        ],
+        "composite": {
+            "fg_list": [
+                {
+                    "path" : " absolute path to frame dir ",
+                    "mask_path" : " absolute path to mask dir (this is optional) ",
+                    "mask_prompt" : "person"
+                },
+                {
+                    "path" : " absolute path to frame dir ",
+                    "mask_path" : " absolute path to mask dir (this is optional) ",
+                    "mask_prompt" : "cat"
+                },
+            ],
+            "bg_frame_dir": "Absolute path to the BG frame directory",
+            "hint": ""
         },
         "0":{
             "width": width,
@@ -624,3 +656,387 @@ def interpolate(
     save_output(out_images,org_frame_dir,out_file,model_config.output,True,save_frames=None,save_video=None)
 
 
+@stylize.command(no_args_is_help=True)
+def create_mask(
+    stylize_dir: Annotated[
+        Path,
+        typer.Argument(path_type=Path, file_okay=False, dir_okay=True, exists=True, help="Path to stylize dir"),
+    ] = ...,
+    frame_dir: Annotated[
+        Path,
+        typer.Option(
+            "--frame_dir",
+            "-f",
+            path_type=Path,
+            file_okay=False,
+            help="Path to source frames directory. default is 'STYLIZE_DIR/00_controlnet_image/controlnet_tile'",
+        ),
+    ] = None,
+    box_threshold: Annotated[
+        float,
+        typer.Option(
+            "--box_threshold",
+            "-b",
+            min=0.0,
+            max=1.0,
+            help="box_threshold",
+            rich_help_panel="create mask",
+        ),
+    ] = 0.3,
+    text_threshold: Annotated[
+        float,
+        typer.Option(
+            "--text_threshold",
+            "-t",
+            min=0.0,
+            max=1.0,
+            help="text_threshold",
+            rich_help_panel="create mask",
+        ),
+    ] = 0.25,
+    mask_padding: Annotated[
+        int,
+        typer.Option(
+            "--mask_padding",
+            "-p",
+            min=-100,
+            max=100,
+            help="padding pixel value",
+            rich_help_panel="create mask",
+        ),
+    ] = 0,
+    low_vram: Annotated[
+        bool,
+        typer.Option(
+            "--low_vram",
+            "-lo",
+            is_flag=True,
+            help="low vram mode",
+            rich_help_panel="create mask/tag",
+        ),
+    ] = False,
+    ignore_list: Annotated[
+        Path,
+        typer.Option(
+            "--ignore-list",
+            "-g",
+            path_type=Path,
+            dir_okay=False,
+            exists=True,
+            help="path to ignore token list file",
+            rich_help_panel="create tag",
+        ),
+    ] = Path("config/prompts/ignore_tokens.txt"),
+    predicte_interval: Annotated[
+        int,
+        typer.Option(
+            "--predicte-interval",
+            "-p",
+            min=1,
+            max=120,
+            help="Interval of frames to be predicted",
+            rich_help_panel="create tag",
+        ),
+    ] = 1,
+    general_threshold: Annotated[
+        float,
+        typer.Option(
+            "--threshold",
+            "-th",
+            min=0.0,
+            max=1.0,
+            help="threshold for general token confidence",
+            rich_help_panel="create tag",
+        ),
+    ] = 0.35,
+    character_threshold: Annotated[
+        float,
+        typer.Option(
+            "--threshold2",
+            "-th2",
+            min=0.0,
+            max=1.0,
+            help="threshold for character token confidence",
+            rich_help_panel="create tag",
+        ),
+    ] = 0.85,
+    without_confidence: Annotated[
+        bool,
+        typer.Option(
+            "--no-confidence-format",
+            "-ncf",
+            is_flag=True,
+            help="confidence token format or not. ex. '(close-up:0.57), (monochrome:1.1)' -> 'close-up, monochrome'",
+            rich_help_panel="create tag",
+        ),
+    ] = False,
+    is_no_danbooru_format: Annotated[
+        bool,
+        typer.Option(
+            "--no-danbooru-format",
+            "-ndf",
+            is_flag=True,
+            help="danbooru token format or not. ex. 'bandaid_on_leg, short_hair' -> 'bandaid on leg, short hair'",
+            rich_help_panel="create tag",
+        ),
+    ] = False,
+):
+    """Create mask from prompt"""
+    from animatediff.utils.mask import create_bg, create_fg
+
+    is_danbooru_format = not is_no_danbooru_format
+    with_confidence = not without_confidence
+
+    prepare_sam_hq(low_vram)
+    prepare_groundingDINO()
+    prepare_propainter()
+
+    time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    config_org = stylize_dir.joinpath("prompt.json")
+
+    model_config: ModelConfig = get_model_config(config_org)
+
+    if frame_dir is None:
+        frame_dir = stylize_dir / "00_controlnet_image/controlnet_tile"
+
+    if not frame_dir.is_dir():
+        raise ValueError(f'{frame_dir=} does not exist.')
+
+
+    create_mask_list = []
+    if "create_mask" in model_config.stylize_config:
+        create_mask_list = model_config.stylize_config["create_mask"]
+    else:
+        raise ValueError('model_config.stylize_config["create_mask"] not found')
+
+    output_list = []
+
+    frame_len = len(sorted(glob.glob( os.path.join(frame_dir, "[0-9]*.png"), recursive=False)))
+
+    masked_area = [None for f in range(frame_len)]
+
+
+    def create_controlnet_dir(controlnet_root):
+        for c in ["controlnet_canny","controlnet_depth","controlnet_inpaint","controlnet_ip2p","controlnet_lineart","controlnet_lineart_anime","controlnet_mlsd","controlnet_normalbae","controlnet_openpose","controlnet_scribble","controlnet_seg","controlnet_shuffle","controlnet_softedge","controlnet_tile"]:
+            c_dir = controlnet_root.joinpath(c)
+            c_dir.mkdir(parents=True, exist_ok=True)
+
+    for i,mask_token in enumerate(create_mask_list):
+        fg_dir = stylize_dir.joinpath(f"fg_{i:02d}_{time_str}")
+        fg_dir.mkdir(parents=True, exist_ok=True)
+
+        create_controlnet_dir( fg_dir / "00_controlnet_image" )
+
+        fg_masked_dir = fg_dir / "00_controlnet_image/controlnet_tile"
+
+        fg_mask_dir = fg_dir / "00_mask"
+        fg_mask_dir.mkdir(parents=True, exist_ok=True)
+
+        masked_area = create_fg(
+            mask_token=mask_token,
+            frame_dir=frame_dir,
+            output_dir=fg_masked_dir,
+            output_mask_dir=fg_mask_dir,
+            masked_area_list=masked_area,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
+            mask_padding=mask_padding,
+            sam_checkpoint= "data/models/SAM/sam_hq_vit_l.pth" if not low_vram else "data/models/SAM/sam_hq_vit_b.pth",
+        )
+
+        logger.info(f"mask from [{mask_token}] are output to {fg_dir}")
+
+        shutil.copytree(fg_masked_dir, fg_masked_dir.parent.joinpath("controlnet_ip2p"), dirs_exist_ok=True)
+
+        output_list.append(fg_dir)
+
+    torch.cuda.empty_cache()
+
+    bg_dir = stylize_dir.joinpath(f"bg_{time_str}")
+    bg_dir.mkdir(parents=True, exist_ok=True)
+    create_controlnet_dir( bg_dir / "00_controlnet_image" )
+    bg_inpaint_dir = bg_dir / "00_controlnet_image/controlnet_tile"
+
+    create_bg(frame_dir, bg_inpaint_dir, masked_area,
+              use_half = True,
+              raft_iter = 20,
+              subvideo_length=80 if not low_vram else 50,
+              neighbor_length=10 if not low_vram else 8,
+              ref_stride=10 if not low_vram else 8,
+              low_vram = low_vram,
+              )
+
+    logger.info(f"background are output to {bg_dir}")
+
+    shutil.copytree(bg_inpaint_dir, bg_inpaint_dir.parent.joinpath("controlnet_ip2p"), dirs_exist_ok=True)
+
+    output_list.append(bg_dir)
+
+    torch.cuda.empty_cache()
+
+    black_list = []
+    if ignore_list.is_file():
+        with open(ignore_list) as f:
+            black_list = [s.strip() for s in f.readlines()]
+
+    for output in output_list:
+
+        model_config.prompt_map = get_labels(
+            frame_dir= output / "00_controlnet_image/controlnet_tile",
+            interval=predicte_interval,
+            general_threshold=general_threshold,
+            character_threshold=character_threshold,
+            ignore_tokens=black_list,
+            with_confidence=with_confidence,
+            is_danbooru_format=is_danbooru_format,
+            is_cpu = False,
+        )
+
+        model_config.controlnet_map["input_image_dir"] = os.path.relpath((output / "00_controlnet_image" ).absolute(), data_dir)
+
+        save_config_path = output.joinpath("prompt.json")
+        save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+
+
+
+
+@stylize.command(no_args_is_help=True)
+def composite(
+    stylize_dir: Annotated[
+        Path,
+        typer.Argument(path_type=Path, file_okay=False, dir_okay=True, exists=True, help="Path to stylize dir"),
+    ] = ...,
+    box_threshold: Annotated[
+        float,
+        typer.Option(
+            "--box_threshold",
+            "-b",
+            min=0.0,
+            max=1.0,
+            help="box_threshold",
+            rich_help_panel="create mask",
+        ),
+    ] = 0.3,
+    text_threshold: Annotated[
+        float,
+        typer.Option(
+            "--text_threshold",
+            "-t",
+            min=0.0,
+            max=1.0,
+            help="text_threshold",
+            rich_help_panel="create mask",
+        ),
+    ] = 0.25,
+    mask_padding: Annotated[
+        int,
+        typer.Option(
+            "--mask_padding",
+            "-p",
+            min=-100,
+            max=100,
+            help="padding pixel value",
+            rich_help_panel="create mask",
+        ),
+    ] = 0,
+    low_vram: Annotated[
+        bool,
+        typer.Option(
+            "--low_vram",
+            "-lo",
+            is_flag=True,
+            help="low vram mode",
+            rich_help_panel="create mask/tag",
+        ),
+    ] = False,
+):
+    """composite FG and BG"""
+
+    from animatediff.utils.composite import composite
+    from animatediff.utils.mask import create_fg, loda_mask_list
+
+    prepare_sam_hq(low_vram)
+
+    time_str = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    config_org = stylize_dir.joinpath("prompt.json")
+
+    model_config: ModelConfig = get_model_config(config_org)
+
+
+    composite_config = {}
+    if "composite" in model_config.stylize_config:
+        composite_config = model_config.stylize_config["composite"]
+    else:
+        raise ValueError('model_config.stylize_config["composite"] not found')
+
+    save_dir = stylize_dir.joinpath(f"cp_{time_str}")
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    save_config_path = save_dir.joinpath("prompt.json")
+    save_config_path.write_text(model_config.json(indent=4), encoding="utf-8")
+
+
+    bg_dir = composite_config["bg_frame_dir"]
+    bg_dir = Path(bg_dir)
+    if not bg_dir.is_dir():
+        raise ValueError('model_config.stylize_config["composite"]["bg_frame_dir"] not valid')
+
+    frame_len = len(sorted(glob.glob( os.path.join(bg_dir, "[0-9]*.png"), recursive=False)))
+
+    fg_list = composite_config["fg_list"]
+
+    for i, fg_param in enumerate(fg_list):
+        mask_token = fg_param["mask_prompt"]
+        frame_dir = Path(fg_param["path"])
+        if not frame_dir.is_dir():
+            logger.warn(f"{frame_dir=} not valid -> skip")
+            continue
+
+        mask_dir = Path(fg_param["mask_path"])
+        if not mask_dir.is_dir():
+            logger.info(f"{mask_dir=} not valid -> create mask")
+
+            fg_tmp_dir = save_dir.joinpath(f"fg_{i:02d}_{time_str}")
+            fg_tmp_dir.mkdir(parents=True, exist_ok=True)
+
+            masked_area_list = [None for f in range(frame_len)]
+
+            mask_list = create_fg(
+                mask_token=mask_token,
+                frame_dir=frame_dir,
+                output_dir=fg_tmp_dir,
+                output_mask_dir=None,
+                masked_area_list=masked_area_list,
+                box_threshold=box_threshold,
+                text_threshold=text_threshold,
+                mask_padding=mask_padding,
+                sam_checkpoint= "data/models/SAM/sam_hq_vit_l.pth" if not low_vram else "data/models/SAM/sam_hq_vit_b.pth",
+            )
+        else:
+            logger.info(f"use {mask_dir=} as mask")
+
+            masked_area_list = [None for f in range(frame_len)]
+
+            mask_list = loda_mask_list(mask_dir, masked_area_list, mask_padding)
+
+        output_dir = save_dir.joinpath(f"bg_{i:02d}_{time_str}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        composite(bg_dir, frame_dir, output_dir, mask_list)
+
+        bg_dir = output_dir
+
+
+    from animatediff.generate import save_output
+
+    frames = sorted(glob.glob( os.path.join(bg_dir, "[0-9]*.png"), recursive=False))
+    out_images = []
+    for f in frames:
+        out_images.append(Image.open(f))
+
+    out_file = save_dir.joinpath(f"composite")
+    save_output(out_images,bg_dir,out_file,model_config.output,True,save_frames=None,save_video=None)
+
+    logger.info(f"output to {out_file}")
